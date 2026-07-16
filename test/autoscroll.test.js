@@ -1,18 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  nextScrollTop, maxScrollOf, isAtBottom, isScrollable, clampSpeed,
-  SPEED_MIN, SPEED_MAX, SPEED_DEFAULT,
+  nextScrollTop, maxScrollOf, isAtBottom, isScrollable, snapSpeed, stepSpeed,
+  SPEED_LEVELS, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT,
 } from '../src/lib/autoscroll.js';
 
 const el = (scrollTop, clientHeight, scrollHeight) => ({ scrollTop, clientHeight, scrollHeight });
 
-test('速度會被夾在合理範圍並對齊級距', () => {
-  assert.equal(clampSpeed(0), SPEED_MIN);
-  assert.equal(clampSpeed(999), SPEED_MAX);
-  assert.equal(clampSpeed(-50), SPEED_MIN);
-  assert.equal(clampSpeed(23), 25);
-  assert.equal(clampSpeed(SPEED_DEFAULT), SPEED_DEFAULT);
+test('速度會吸附到最近的檔位並夾在範圍內', () => {
+  assert.equal(snapSpeed(0), SPEED_MIN);
+  assert.equal(snapSpeed(999), SPEED_MAX);
+  assert.equal(snapSpeed(-50), SPEED_MIN);
+  assert.equal(snapSpeed(23), 22, '23 最接近 22');
+  assert.equal(snapSpeed(SPEED_DEFAULT), SPEED_DEFAULT);
+  assert.equal(snapSpeed(NaN), SPEED_DEFAULT, '壞資料要有安全預設');
+  assert.equal(snapSpeed(undefined), SPEED_DEFAULT);
+});
+
+test('★ 慢速區的檔位要細（慢練時 2 跟 3 差很多）', () => {
+  const slow = SPEED_LEVELS.filter((v) => v <= 8);
+  for (let i = 1; i < slow.length; i++) {
+    assert.equal(slow[i] - slow[i - 1], 1, `慢速區 ${slow[i - 1]}→${slow[i]} 增量應為 1`);
+  }
+  assert.equal(SPEED_MIN, 2, '最慢要能到 2 px/s');
+});
+
+test('★ +/- 一次移動一格，到底不會越界', () => {
+  assert.equal(stepSpeed(2, -1), 2, '已在最慢');
+  assert.equal(stepSpeed(2, 1), 3);
+  assert.equal(stepSpeed(60, 1), 60, '已在最快');
+  assert.equal(stepSpeed(60, -1), 50);
+  assert.equal(stepSpeed(23, -1), 18, '先吸附到 22 再往下一格');
 });
 
 test('捲動位移 = 速度 × 時間', () => {
@@ -48,9 +66,24 @@ test('★ 一分鐘捲動距離符合實際練琴節奏', () => {
   // 18px 字級下一行約 41px（歌詞 26 + 和弦 15）
   const LINE = 41;
   const linesPerMin = (speed) => (speed * 60) / LINE;
-  assert.ok(linesPerMin(SPEED_MIN) >= 6 && linesPerMin(SPEED_MIN) <= 9, `最慢 ${linesPerMin(SPEED_MIN).toFixed(1)} 行/分`);
-  assert.ok(linesPerMin(SPEED_DEFAULT) >= 25 && linesPerMin(SPEED_DEFAULT) <= 32, `預設 ${linesPerMin(SPEED_DEFAULT).toFixed(1)} 行/分`);
+  assert.ok(linesPerMin(SPEED_MIN) <= 3.5, `最慢應該要夠慢，實際 ${linesPerMin(SPEED_MIN).toFixed(1)} 行/分`);
+  assert.ok(linesPerMin(SPEED_DEFAULT) >= 15 && linesPerMin(SPEED_DEFAULT) <= 20, `預設 ${linesPerMin(SPEED_DEFAULT).toFixed(1)} 行/分`);
   assert.ok(linesPerMin(SPEED_MAX) >= 80, `最快 ${linesPerMin(SPEED_MAX).toFixed(1)} 行/分`);
+});
+
+test('★★ 慢速度必須真的會動（浮點累積器，不可依賴 scrollTop 讀回）', () => {
+  // 這是使用者回報「20 不會捲、25 才會動」的根因測試。
+  // 舊做法每幀從 el.scrollTop 讀回當基準，小數被瀏覽器截掉 → 永遠累積不起來。
+  for (const speed of SPEED_LEVELS) {
+    let pos = 0;
+    for (let i = 0; i < 60; i++) pos = nextScrollTop(pos, speed, 1 / 60, 99999); // 模擬 1 秒 @60fps
+    assert.ok(Math.abs(pos - speed) < 0.001, `速度 ${speed}：1 秒應捲 ${speed}px，實際 ${pos.toFixed(3)}px`);
+  }
+
+  // 對照組：模擬「每幀截斷小數」的舊行為，證明它真的不會動
+  let broken = 0;
+  for (let i = 0; i < 60; i++) broken = Math.trunc(nextScrollTop(broken, 20, 1 / 60, 99999));
+  assert.equal(broken, 0, '舊做法在 20 px/s 下確實完全不動（這就是回報的 bug）');
 });
 
 test('★ 分頁切回來時 dt 爆大也不會瞬間跳到底', () => {

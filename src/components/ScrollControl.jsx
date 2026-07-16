@@ -1,6 +1,6 @@
 import React from 'react';
 import { Play, Pause, Minus, Plus, ArrowUpToLine } from 'lucide-react';
-import { SPEED_MIN, SPEED_MAX, SPEED_STEP } from '../lib/autoscroll.js';
+import { SPEED_MIN, SPEED_MAX, stepSpeed } from '../lib/autoscroll.js';
 
 /**
  * 自動捲動控制
@@ -13,7 +13,7 @@ import { SPEED_MIN, SPEED_MAX, SPEED_STEP } from '../lib/autoscroll.js';
 export default function ScrollControl({ playing, onToggle, speed, onSpeed, onTop, visible }) {
   if (!visible) return null;
 
-  const step = (d) => onSpeed(Math.min(SPEED_MAX, Math.max(SPEED_MIN, speed + d * SPEED_STEP)));
+  const step = (d) => onSpeed(stepSpeed(speed, d));
 
   return (
     <div

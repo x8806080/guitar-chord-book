@@ -51,16 +51,21 @@ const render = async (over = {}) => {
      document.querySelector('div[class*="opacity-40"]') !== null);
 
   await click(btn('捲快一點'));
-  ok('★ 加速一次 = +5', state.speed === 25, `實際 ${state.speed}`);
+  ok('★ 加速一次移動一格（20→22）', state.speed === 22, `實際 ${state.speed}`);
 
-  await render({ speed: 25 });
+  await render({ speed: 22 });
   await click(btn('捲慢一點'));
-  ok('★ 減速一次 = -5', state.speed === 20, `實際 ${state.speed}`);
+  ok('★ 減速一次移動一格（22→18）', state.speed === 18, `實際 ${state.speed}`);
+
+  // 慢速區必須細緻：3 往下一格是 2，不是一次掉 5
+  await render({ speed: 3 });
+  await click(btn('捲慢一點'));
+  ok('★★ 慢速區一次只降 1（3→2，慢練用得到）', state.speed === 2, `實際 ${state.speed}`);
 
   await render({ speed: 60 });
   ok('★ 到最快時加速鍵停用', btn('捲快一點').disabled);
-  await render({ speed: 5 });
-  ok('★ 到最慢時減速鍵停用', btn('捲慢一點').disabled);
+  await render({ speed: 2 });
+  ok('★ 到最慢時減速鍵停用（最慢是 2 不是 5）', btn('捲慢一點').disabled);
 
   await render({ speed: 20 });
   await click(btn('回到開頭'));

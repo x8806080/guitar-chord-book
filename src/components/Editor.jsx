@@ -4,6 +4,7 @@ const SNIPPETS = [
   { label: '和弦', insert: '[C]' },
   { label: '標題', insert: '{title: }' },
   { label: '註解', insert: '{comment: }' },
+  { label: 'YT', insert: '{youtube: }' },
   { label: '副歌', insert: '{start_of_chorus}\n\n{end_of_chorus}' },
   { label: 'TAB', insert: '{start_of_tab}\n\n{end_of_tab}' },
 ];

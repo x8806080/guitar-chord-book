@@ -12,7 +12,7 @@ import { parseChordPro, collectChords } from './lib/chordpro.js';
 import { detectKey, preferFlat } from './lib/chords.js';
 import * as db from './lib/storage.js';
 import { syncNow } from './lib/sync.js';
-import { useAutoScroll, clampSpeed, scrollToTop, SPEED_DEFAULT } from './lib/autoscroll.js';
+import { useAutoScroll, snapSpeed, scrollToTop, SPEED_DEFAULT } from './lib/autoscroll.js';
 import { SAMPLE } from './lib/sample.js';
 
 export default function App() {
@@ -113,7 +113,7 @@ export default function App() {
 
   /* ---------- 自動捲動 ---------- */
   const sheetRef = useRef(null);
-  const scrollSpeed = clampSpeed(active?.scrollSpeed ?? SPEED_DEFAULT);
+  const scrollSpeed = snapSpeed(active?.scrollSpeed ?? SPEED_DEFAULT);
   const { playing, toggle, stop, backToTop, canScroll } = useAutoScroll(sheetRef, scrollSpeed);
 
   // 換歌就停下來，免得新歌自己捲起來

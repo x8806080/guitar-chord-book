@@ -5,6 +5,7 @@
  *
  * 支援指令：
  *   {title:} {t:}  {subtitle:} {st:} {artist:} {key:} {capo:} {tempo:}
+ *   {youtube:} {yt:} {video:}  —— 原曲連結，會嵌入 YouTube 官方播放器
  *   {comment:} {c:}
  *   {start_of_chorus} {soc} / {end_of_chorus} {eoc}
  *   {start_of_tab}    {sot} / {end_of_tab}    {eot}
@@ -22,6 +23,10 @@ const META_ALIAS = {
   composer: 'composer',
   key: 'key',
   capo: 'capo',
+  youtube: 'youtube',
+  yt: 'youtube',
+  video: 'youtube',
+  url: 'youtube',
   tempo: 'tempo',
   time: 'time',
 };

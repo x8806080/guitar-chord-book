@@ -3,6 +3,10 @@ export const SAMPLE = `{title: Twinkle Twinkle Little Star}
 {key: C}
 {capo: 0}
 
+# 想邊聽原曲邊練，把下面這行的井號拿掉，貼上 YouTube 連結：
+# {youtube: https://youtu.be/影片ID}
+# 各種格式都吃得下：youtu.be 短網址、watch?v=、Shorts、含 &t=1m30s 時間戳都可以
+
 {comment: Intro（示範 slash chord 與延伸和弦）}
 {start_of_tab}
 e|---------------------------------|

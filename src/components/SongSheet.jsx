@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { pairsToUnits, collectChords } from '../lib/chordpro.js';
 import { transposeChordToken, transposeChord, isChord } from '../lib/chords.js';
 import { ChordCard } from './ChordDiagram.jsx';
+import VideoPlayer from './VideoPlayer.jsx';
+import { parseYouTube } from '../lib/youtube.js';
 
 /**
  * 樂譜渲染
@@ -46,6 +48,9 @@ export default function SongSheet({ ast, semitones = 0, useFlat = false, fontSiz
     return out;
   }, [ast, semitones, useFlat]);
 
+  // 解析失敗時 video 是 null，播放器整塊就不顯示（不能因為連結打錯就炸掉樂譜）
+  const video = useMemo(() => parseYouTube(meta.youtube), [meta.youtube]);
+
   // 每個和弦各自記住目前顯示第幾種按法
   const [shapeIdx, setShapeIdx] = useState({});
   const cycle = (name, next) => setShapeIdx((p) => ({ ...p, [name]: next }));
@@ -70,6 +75,8 @@ export default function SongSheet({ ast, semitones = 0, useFlat = false, fontSiz
           </ul>
         )}
       </header>
+
+      <VideoPlayer video={video} title={meta.title} />
 
       {showChords && chordList.length > 0 && (
         <section className="mb-8 border-b border-line pb-6">
