@@ -6,11 +6,13 @@ import SongSheet from './components/SongSheet.jsx';
 import SongList from './components/SongList.jsx';
 import TransposeBar from './components/TransposeBar.jsx';
 import SyncSettings from './components/SyncSettings.jsx';
+import ScrollControl from './components/ScrollControl.jsx';
 
 import { parseChordPro, collectChords } from './lib/chordpro.js';
 import { detectKey, preferFlat } from './lib/chords.js';
 import * as db from './lib/storage.js';
 import { syncNow } from './lib/sync.js';
+import { useAutoScroll, clampSpeed, scrollToTop, SPEED_DEFAULT } from './lib/autoscroll.js';
 import { SAMPLE } from './lib/sample.js';
 
 export default function App() {
@@ -109,6 +111,14 @@ export default function App() {
     });
   }, [activeId, scheduleSync]);
 
+  /* ---------- 自動捲動 ---------- */
+  const sheetRef = useRef(null);
+  const scrollSpeed = clampSpeed(active?.scrollSpeed ?? SPEED_DEFAULT);
+  const { playing, toggle, stop, backToTop, canScroll } = useAutoScroll(sheetRef, scrollSpeed);
+
+  // 換歌就停下來，免得新歌自己捲起來
+  useEffect(() => { stop(); scrollToTop(sheetRef.current, false); }, [activeId, stop]);
+
   // 歌名/歌手跟著 {title:} {artist:} 走，側欄才不會一直顯示「未命名」
   useEffect(() => {
     if (!active) return;
@@ -167,10 +177,11 @@ export default function App() {
       if (e.key === '+' || e.key === '=') patchActive({ semitones: Math.min(11, semitones + 1) });
       if (e.key === '-') patchActive({ semitones: Math.max(-11, semitones - 1) });
       if (e.key === '0') patchActive({ semitones: 0 });
+      if (e.key === ' ') { e.preventDefault(); toggle(); } // 空白鍵 = 播放/暫停
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [semitones, patchActive]);
+  }, [semitones, patchActive, toggle]);
 
   const iconBtn =
     'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink hover:border-accent hover:text-accent';
@@ -202,6 +213,8 @@ export default function App() {
               onToggleFlat={() => setPrefs({ useFlat: !useFlat })}
               fontSize={prefs.fontSize}
               onFontSize={(v) => setPrefs({ fontSize: v })}
+              showChords={prefs.showChords !== false}
+              onToggleChords={() => setPrefs({ showChords: prefs.showChords === false })}
             />
           )}
           <button
@@ -266,17 +279,32 @@ export default function App() {
         </section>
 
         {/* 樂譜區 */}
-        <section
-          className={`min-h-0 w-full overflow-y-auto lg:block ${mobileView === 'sheet' ? 'block' : 'hidden'}`}
-        >
-          {active ? (
-            <SongSheet ast={ast} semitones={semitones} useFlat={useFlat} fontSize={prefs.fontSize} />
-          ) : (
-            <div className="grid h-full place-items-center px-6 text-center text-muted">
-              <p>還沒有選歌。按 ＋ 建一首新的，或匯入你的 JSON 備份。</p>
-            </div>
-          )}
-        </section>
+        <div className={`relative min-h-0 w-full lg:block ${mobileView === 'sheet' ? 'block' : 'hidden'}`}>
+          <section ref={sheetRef} className="h-full overflow-y-auto">
+            {active ? (
+              <SongSheet
+                ast={ast}
+                semitones={semitones}
+                useFlat={useFlat}
+                fontSize={prefs.fontSize}
+                showChords={prefs.showChords !== false}
+              />
+            ) : (
+              <div className="grid h-full place-items-center px-6 text-center text-muted">
+                <p>還沒有選歌。按 ＋ 建一首新的，或匯入你的 JSON 備份。</p>
+              </div>
+            )}
+          </section>
+
+          <ScrollControl
+            visible={Boolean(active) && canScroll}
+            playing={playing}
+            onToggle={toggle}
+            speed={scrollSpeed}
+            onSpeed={(v) => patchActive({ scrollSpeed: v })}
+            onTop={backToTop}
+          />
+        </div>
       </main>
 
       {/* ---- 手機底部分頁 ---- */}

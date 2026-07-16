@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
-import { pairsToUnits } from '../lib/chordpro.js';
-import { transposeChordToken } from '../lib/chords.js';
+import React, { useMemo, useState } from 'react';
+import { pairsToUnits, collectChords } from '../lib/chordpro.js';
+import { transposeChordToken, transposeChord, isChord } from '../lib/chords.js';
+import { ChordCard } from './ChordDiagram.jsx';
 
 /**
  * 樂譜渲染
@@ -28,8 +29,26 @@ function Line({ pairs, semitones, useFlat }) {
   );
 }
 
-export default function SongSheet({ ast, semitones = 0, useFlat = false, fontSize = 18 }) {
+export default function SongSheet({ ast, semitones = 0, useFlat = false, fontSize = 18, showChords = true }) {
   const { meta, blocks } = ast;
+
+  // 本曲用到的和弦（依出現順序去重，且已轉調）
+  const chordList = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const raw of collectChords(ast)) {
+      if (!isChord(raw)) continue;                 // 跳過 N.C.、| 等記號
+      const t = transposeChord(raw, semitones, useFlat);
+      if (seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+    }
+    return out;
+  }, [ast, semitones, useFlat]);
+
+  // 每個和弦各自記住目前顯示第幾種按法
+  const [shapeIdx, setShapeIdx] = useState({});
+  const cycle = (name, next) => setShapeIdx((p) => ({ ...p, [name]: next }));
 
   return (
     <article
@@ -51,6 +70,27 @@ export default function SongSheet({ ast, semitones = 0, useFlat = false, fontSiz
           </ul>
         )}
       </header>
+
+      {showChords && chordList.length > 0 && (
+        <section className="mb-8 border-b border-line pb-6">
+          <h2 className="mb-3 font-display text-[11px] font-semibold uppercase tracking-widest text-muted">
+            本曲和弦
+          </h2>
+          <div className="flex flex-wrap gap-x-2 gap-y-3">
+            {chordList.map((name) => (
+              <ChordCard
+                key={name}
+                name={name}
+                shapeIndex={shapeIdx[name] ?? 0}
+                onCycle={cycle}
+              />
+            ))}
+          </div>
+          <p className="no-print mt-3 text-[11px] text-muted">
+            點和弦圖可切換不同按法
+          </p>
+        </section>
+      )}
 
       {blocks.length === 0 && (
         <p className="text-muted">左側還沒有內容。輸入 <code className="font-chord">[C]歌詞</code> 就會出現在這裡。</p>

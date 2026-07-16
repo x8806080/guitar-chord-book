@@ -58,6 +58,20 @@ const App = require('/home/claude/guitar-chord-book/.smoke/app.cjs').default;
   ok('未設定同步時不打網路', fetchCalls === 0, `fetch 被呼叫 ${fetchCalls} 次`);
   ok('雲朵按鈕存在', html.includes('裝置同步'));
 
+  // 和弦圖
+  const svgs = document.querySelectorAll('#root svg');
+  const diagrams = [...svgs].filter((el) => el.querySelector('circle, rect'));
+  ok('★ 和弦圖區塊有渲染', html.includes('本曲和弦'));
+  ok('★ 有畫出 SVG 和弦圖', diagrams.length >= 4, `找到 ${diagrams.length} 張圖`);
+  ok('★ 圖上有按弦點', [...document.querySelectorAll('#root circle')].some((c) => parseFloat(c.getAttribute('r')) > 3),
+     `circle 共 ${document.querySelectorAll('#root circle').length} 個`);
+  ok('★ 範例曲的 C/F/G/Am 都有圖',
+     ['C', 'F', 'G', 'Am'].every((n) => [...document.querySelectorAll('#root button, #root div')]
+       .some((el) => el.textContent.trim().startsWith(n))));
+  ok('★ 大橫按有畫成橫條（F 和弦）',
+     [...document.querySelectorAll('#root rect')].some((r) => parseFloat(r.getAttribute('rx') || 0) > 3),
+     `rect 共 ${document.querySelectorAll('#root rect').length} 個`);
+
   let pass = 0;
   for (const [s, n, e] of checks) {
     console.log(`${s === 'PASS' ? '✅' : '❌'} ${n}${e ? '  → ' + e : ''}`);

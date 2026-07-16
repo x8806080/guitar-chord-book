@@ -1,5 +1,5 @@
 import React from 'react';
-import { Minus, Plus, RotateCcw, Type, Printer } from 'lucide-react';
+import { Minus, Plus, RotateCcw, Type, Printer, Guitar } from 'lucide-react';
 import { currentKeyLabel } from '../lib/chords.js';
 
 const btn =
@@ -19,6 +19,8 @@ export default function TransposeBar({
   onToggleFlat,
   fontSize,
   onFontSize,
+  showChords,
+  onToggleChords,
 }) {
   const label = currentKeyLabel(baseKey, semitones);
   const delta = semitones > 0 ? `+${semitones}` : semitones < 0 ? `${semitones}` : '原調';
@@ -68,6 +70,16 @@ export default function TransposeBar({
       </div>
 
       <span className="mx-1 h-6 w-px bg-line" />
+
+      <button
+        className={btn}
+        onClick={onToggleChords}
+        title={showChords ? '隱藏和弦圖' : '顯示和弦圖'}
+        aria-pressed={showChords}
+        style={{ color: showChords ? 'var(--chord)' : undefined }}
+      >
+        <Guitar size={15} />
+      </button>
 
       <button
         className={`${btn} w-auto px-2.5 font-chord text-xs font-bold`}
