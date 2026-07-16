@@ -3,8 +3,13 @@ import { X, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2, Trash2 } from 'lu
 import { checkRepo } from '../lib/sync.js';
 
 const field =
-  'w-full rounded-lg border border-line bg-bg px-3 py-2 text-[13px] outline-none focus:border-accent';
+  'w-full rounded-lg border border-line bg-bg px-3 py-2 text-[13px] outline-none focus:border-accent ' +
+  // placeholder 調暗 + 斜體，避免被誤認為「已經填好的值」
+  'placeholder:italic placeholder:text-muted placeholder:opacity-45';
 const label = 'mb-1 block text-[12px] font-medium text-muted';
+const req = <span style={{ color: 'var(--danger)' }} title="必填"> *</span>;
+
+const FIELD_IDS = { Token: 'tok', '帳號': 'own', 'Repo 名稱': 'rep', '檔案路徑': 'pth', '分支': 'brc' };
 
 export default function SyncSettings({ config, onSave, onClear, onSyncNow, onClose, status }) {
   const [c, setC] = useState(config);
@@ -13,6 +18,39 @@ export default function SyncSettings({ config, onSave, onClear, onSyncNow, onClo
   const [result, setResult] = useState(null); // {ok, msg, warn}
 
   const set = (k, v) => setC((p) => ({ ...p, [k]: v }));
+
+  /** 哪些必填還沒填 */
+  const missing = () => {
+    const m = [];
+    if (!String(c.token).trim()) m.push('Token');
+    if (!String(c.owner).trim()) m.push('帳號');
+    if (!String(c.repo).trim()) m.push('Repo 名稱');
+    if (!String(c.path).trim()) m.push('檔案路徑');
+    if (!String(c.branch).trim()) m.push('分支');
+    return m;
+  };
+
+  /**
+   * 按鈕一律可按。缺欄位時明講缺什麼並跳到該欄位 —— 
+   * 停用按鈕卻不說原因，使用者只會覺得「壞掉了」。
+   */
+  const guard = (fn) => {
+    const m = missing();
+    if (m.length) {
+      const el = document.getElementById(FIELD_IDS[m[0]]);
+      el?.closest('details')?.setAttribute('open', '');   // 缺的是進階欄位就自動展開
+      setResult({
+        ok: false,
+        msg: m.length === 1 && m[0] === 'Token'
+          ? '還沒貼上 Token。（欄位裡的灰色斜體字只是範例，不是已填入的值）'
+          : `還沒填：${m.join('、')}`,
+      });
+      el?.focus();
+      return;
+    }
+    setResult(null);
+    fn();
+  };
 
   const test = async () => {
     setTesting(true);
@@ -63,20 +101,19 @@ export default function SyncSettings({ config, onSave, onClear, onSyncNow, onClo
 
         <div className="space-y-4 p-5">
           <p className="rounded-lg border border-line bg-surface2 p-3 text-[12px] leading-relaxed text-muted">
-            歌譜會存成一個 JSON 檔放在你自己的 <strong className="text-ink">Private</strong> repo。
-            Token 只留在這台裝置的瀏覽器，不會上傳、不會進程式碼。
-            每台裝置各自輸入一次。
+            <strong className="text-ink">只要貼上 Token 就好</strong>，其他都已經設定好了。
+            Token 只留在這台裝置的瀏覽器，不會上傳、不會進程式碼 —— 所以每台裝置都要各貼一次。
           </p>
 
           <div>
-            <label className={label} htmlFor="tok">GitHub Token（fine-grained）</label>
+            <label className={label} htmlFor="tok">GitHub Token（fine-grained）{req}</label>
             <div className="flex gap-2">
               <input
                 id="tok"
                 type={show ? 'text' : 'password'}
                 value={c.token}
                 onChange={(e) => set('token', e.target.value)}
-                placeholder="github_pat_..."
+                placeholder="例：github_pat_11ABC..."
                 autoComplete="off"
                 spellCheck={false}
                 className={`${field} font-chord`}
@@ -91,24 +128,40 @@ export default function SyncSettings({ config, onSave, onClear, onSyncNow, onClo
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={label} htmlFor="own">帳號 / 組織</label>
-              <input id="own" value={c.owner} onChange={(e) => set('owner', e.target.value)} placeholder="x8806080" className={`${field} font-chord`} />
-            </div>
-            <div>
-              <label className={label} htmlFor="rep">Repo 名稱</label>
-              <input id="rep" value={c.repo} onChange={(e) => set('repo', e.target.value)} placeholder="chordbook-data" className={`${field} font-chord`} />
-            </div>
-            <div>
-              <label className={label} htmlFor="pth">檔案路徑</label>
-              <input id="pth" value={c.path} onChange={(e) => set('path', e.target.value)} placeholder="songs.json" className={`${field} font-chord`} />
-            </div>
-            <div>
-              <label className={label} htmlFor="brc">分支</label>
-              <input id="brc" value={c.branch} onChange={(e) => set('branch', e.target.value)} placeholder="main" className={`${field} font-chord`} />
-            </div>
+          <div className="flex items-center justify-between rounded-lg border border-line bg-surface2 px-3 py-2">
+            <span className="text-[12px] text-muted">同步目標</span>
+            <span className="font-chord text-[12px] text-ink">
+              {c.owner}/{c.repo} <span className="text-muted">· {c.path}</span>
+            </span>
           </div>
+
+          <details className="rounded-lg border border-line">
+            <summary className="cursor-pointer select-none px-3 py-2 text-[12px] text-muted hover:text-ink">
+              進階設定（已預設好，通常不用改）
+            </summary>
+            <div className="grid grid-cols-2 gap-3 border-t border-line p-3">
+              <div>
+                <label className={label} htmlFor="own">帳號 / 組織{req}</label>
+                <input id="own" value={c.owner} onChange={(e) => set('owner', e.target.value)} placeholder="例：你的 GitHub 帳號" className={`${field} font-chord`} />
+              </div>
+              <div>
+                <label className={label} htmlFor="rep">Repo 名稱{req}</label>
+                <input id="rep" value={c.repo} onChange={(e) => set('repo', e.target.value)} placeholder="例：chordbook-data" className={`${field} font-chord`} />
+              </div>
+              <div>
+                <label className={label} htmlFor="pth">檔案路徑{req}</label>
+                <input id="pth" value={c.path} onChange={(e) => set('path', e.target.value)} placeholder="songs.json" className={`${field} font-chord`} />
+              </div>
+              <div>
+                <label className={label} htmlFor="brc">分支{req}</label>
+                <input id="brc" value={c.branch} onChange={(e) => set('branch', e.target.value)} placeholder="main" className={`${field} font-chord`} />
+              </div>
+              <p className="col-span-2 text-[11px] leading-relaxed text-muted">
+                預設值寫在 <code className="font-chord">src/config.js</code>。owner / repo 不是機密，
+                可以放進程式碼；<strong className="text-ink">token 絕對不行</strong>。
+              </p>
+            </div>
+          </details>
 
           {result && (
             <p
@@ -123,17 +176,16 @@ export default function SyncSettings({ config, onSave, onClear, onSyncNow, onClo
 
           <div className="flex gap-2">
             <button
-              onClick={test}
-              disabled={testing || !c.token || !c.owner || !c.repo}
+              onClick={() => guard(test)}
+              disabled={testing}
               className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-line py-2 text-[13px] hover:border-accent hover:text-accent disabled:opacity-40"
             >
               {testing && <Loader2 size={14} className="animate-spin" />}
               測試連線
             </button>
             <button
-              onClick={save}
-              disabled={!c.token || !c.owner || !c.repo}
-              className="flex-1 rounded-lg py-2 text-[13px] font-medium disabled:opacity-40"
+              onClick={() => guard(save)}
+              className="flex-1 rounded-lg py-2 text-[13px] font-medium"
               style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
             >
               儲存設定

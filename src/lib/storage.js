@@ -7,6 +7,8 @@
  * 標記 deletedAt 才能讓「刪除」這個動作本身也參與合併。
  */
 
+import { SYNC_DEFAULTS } from '../config.js';
+
 const KEY = 'gcb.songs.v1';
 const PREFS = 'gcb.prefs.v1';
 const SYNC = 'gcb.sync.v1';
@@ -93,8 +95,22 @@ export const setPrefs = (p) => write(PREFS, p);
 
 /* ---------- 同步設定（含 token，只存在這台裝置） ---------- */
 
-export const getSyncConfig = () =>
-  read(SYNC, { token: '', owner: '', repo: '', path: 'songs.json', branch: 'main', sha: null, lastSync: null });
+/**
+ * 同步設定。owner/repo/path/branch 一律用 config.js 的預設值帶入，
+ * 使用者只需要貼 token。存過的值優先（讓進階使用者能改）。
+ */
+export const getSyncConfig = () => {
+  const s = read(SYNC, {});
+  return {
+    token: s.token || '',
+    owner: s.owner || SYNC_DEFAULTS.owner,
+    repo: s.repo || SYNC_DEFAULTS.repo,
+    path: s.path || SYNC_DEFAULTS.path,
+    branch: s.branch || SYNC_DEFAULTS.branch,
+    sha: s.sha ?? null,
+    lastSync: s.lastSync ?? null,
+  };
+};
 export const setSyncConfig = (c) => write(SYNC, c);
 export const clearSyncConfig = () => localStorage.removeItem(SYNC);
 export const isSyncReady = (c) => Boolean(c?.token && c?.owner && c?.repo && c?.path);
