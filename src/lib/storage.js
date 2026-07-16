@@ -1,16 +1,22 @@
 /**
- * storage.js — 資料存取層（Repository Pattern）
- * 目前實作：LocalStorage。
- * 未來要接 Firebase / Supabase，只要換掉這個檔案的實作、保持同樣介面即可，
- * 上層 React 元件完全不用改。
+ * storage.js — 本機資料存取層（Repository Pattern）
+ *
+ * 重要：刪除採「墓碑（tombstone）」而非真的移除。
+ * 因為多裝置同步時，若 A 裝置把歌真的刪掉，下次跟 B 裝置合併，
+ * B 那邊還在的那首會被當成「A 沒有的新歌」而復活。
+ * 標記 deletedAt 才能讓「刪除」這個動作本身也參與合併。
  */
 
 const KEY = 'gcb.songs.v1';
 const PREFS = 'gcb.prefs.v1';
+const SYNC = 'gcb.sync.v1';
 export const SCHEMA_VERSION = 1;
 
+/** 墓碑保留天數，超過就真的清掉 */
+const TOMBSTONE_DAYS = 30;
+
 const uid = () =>
-  (crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 const read = (k, fallback) => {
   try {
@@ -30,10 +36,26 @@ const write = (k, v) => {
   }
 };
 
-export const listSongs = () => read(KEY, []);
+/** 含墓碑的完整清單（給同步用） */
+export const listAll = () => read(KEY, []);
+
+/** 畫面用：不含已刪除 */
+export const listSongs = () => listAll().filter((s) => !s.deletedAt);
+
+/** 整包覆寫（同步合併後呼叫） */
+export function replaceAll(songs) {
+  write(KEY, gcTombstones(songs));
+  return listAll();
+}
+
+/** 清掉過期墓碑 */
+export function gcTombstones(songs) {
+  const cutoff = new Date(Date.now() - TOMBSTONE_DAYS * 86400000).toISOString();
+  return songs.filter((s) => !(s.deletedAt && s.deletedAt < cutoff));
+}
 
 export function saveSong(song) {
-  const songs = listSongs();
+  const songs = listAll();
   const now = new Date().toISOString();
   const i = songs.findIndex((s) => s.id === song.id);
   const next = { ...song, updatedAt: now, createdAt: song.createdAt || now };
@@ -56,14 +78,26 @@ export function createSong(partial = {}) {
   };
 }
 
+/** 刪除 = 立墓碑，內容清空以免佔空間 */
 export function deleteSong(id) {
-  const songs = listSongs().filter((s) => s.id !== id);
+  const now = new Date().toISOString();
+  const songs = listAll().map((s) =>
+    s.id === id ? { ...s, source: '', deletedAt: now, updatedAt: now } : s
+  );
   write(KEY, songs);
   return songs;
 }
 
 export const getPrefs = () => read(PREFS, { theme: 'dark', fontSize: 18, useFlat: false });
 export const setPrefs = (p) => write(PREFS, p);
+
+/* ---------- 同步設定（含 token，只存在這台裝置） ---------- */
+
+export const getSyncConfig = () =>
+  read(SYNC, { token: '', owner: '', repo: '', path: 'songs.json', branch: 'main', sha: null, lastSync: null });
+export const setSyncConfig = (c) => write(SYNC, c);
+export const clearSyncConfig = () => localStorage.removeItem(SYNC);
+export const isSyncReady = (c) => Boolean(c?.token && c?.owner && c?.repo && c?.path);
 
 /* ---------- 備份 / 復原 ---------- */
 
@@ -82,10 +116,6 @@ export function exportJSON() {
   URL.revokeObjectURL(url);
 }
 
-/**
- * 匯入 JSON。mode: 'merge'（依 id 覆蓋並保留其他）| 'replace'（整包取代）
- * @returns {{added:number, updated:number}}
- */
 export async function importJSON(file, mode = 'merge') {
   const text = await file.text();
   const data = JSON.parse(text);
@@ -96,7 +126,7 @@ export async function importJSON(file, mode = 'merge') {
     write(KEY, incoming);
     return { added: incoming.length, updated: 0 };
   }
-  const songs = listSongs();
+  const songs = listAll();
   let added = 0, updated = 0;
   for (const s of incoming) {
     if (!s || typeof s.source !== 'string') continue;

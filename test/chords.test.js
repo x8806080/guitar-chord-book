@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { transposeChord, parseChord, detectKey } from '../src/lib/chords.js';
-import { parseChordPro, parseChordLine, collectChords } from '../src/lib/chordpro.js';
+import { parseChordPro, parseChordLine, collectChords, pairsToUnits } from '../src/lib/chordpro.js';
 
 test('基本三和弦升降', () => {
   assert.equal(transposeChord('C', 1), 'C#');
@@ -61,4 +61,28 @@ test('指令與段落', () => {
   assert.equal(ast.meta.artist, 'X');
   assert.deepEqual(ast.blocks.map((b) => b.type), ['chorus', 'tab']);
   assert.deepEqual(collectChords(ast), ['C']);
+});
+
+test('CJK 逐字切成斷行單元', () => {
+  const units = pairsToUnits(parseChordLine('[C]我曾經跨過'));
+  assert.equal(units.length, 5);
+  assert.equal(units[0].chord, 'C');
+  assert.equal(units[0].text, '我');
+  assert.equal(units[4].text, '過');
+});
+
+test('中文標點不會跑到行首', () => {
+  const units = pairsToUnits(parseChordLine('[C]大海，[Am]人海'));
+  assert.deepEqual(units.map((u) => u.text), ['大', '海，', '人', '海']);
+});
+
+test('拉丁單字不會被拆開', () => {
+  const units = pairsToUnits(parseChordLine('[C]Twinkle, twinkle'));
+  assert.deepEqual(units.map((u) => u.text), ['Twinkle,', ' ', 'twinkle']);
+  assert.equal(units[0].chord, 'C');
+});
+
+test('中英混排', () => {
+  const units = pairsToUnits(parseChordLine('[C]我 love 你'));
+  assert.deepEqual(units.map((u) => u.text), ['我', ' ', 'love', ' ', '你']);
 });

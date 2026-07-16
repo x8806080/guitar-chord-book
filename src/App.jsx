@@ -1,30 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Sun, PanelLeft, PenLine, Music4 } from 'lucide-react';
+import { Moon, Sun, PanelLeft, PenLine, Music4, Cloud, CloudOff, RefreshCw, CloudAlert } from 'lucide-react';
 
 import Editor from './components/Editor.jsx';
 import SongSheet from './components/SongSheet.jsx';
 import SongList from './components/SongList.jsx';
 import TransposeBar from './components/TransposeBar.jsx';
+import SyncSettings from './components/SyncSettings.jsx';
 
 import { parseChordPro, collectChords } from './lib/chordpro.js';
 import { detectKey, preferFlat } from './lib/chords.js';
 import * as db from './lib/storage.js';
+import { syncNow } from './lib/sync.js';
 import { SAMPLE } from './lib/sample.js';
 
 export default function App() {
   const [songs, setSongs] = useState(() => {
-    const list = db.listSongs();
+    const list = db.listAll();
     if (list.length) return list;
     // 首次造訪塞一首範例，讓人立刻看到東西
     return db.saveSong(db.createSong({ title: 'Twinkle Twinkle Little Star', artist: '傳統民謠', source: SAMPLE }));
   });
-  const [activeId, setActiveId] = useState(() => songs[0]?.id ?? null);
+  const visible = useMemo(() => songs.filter((s) => !s.deletedAt), [songs]);
+  const [activeId, setActiveId] = useState(() => visible[0]?.id ?? null);
+
+  const [syncCfg, setSyncCfg] = useState(db.getSyncConfig);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncState, setSyncState] = useState('idle'); // idle | busy | ok | error | off
   const [prefs, setPrefsState] = useState(db.getPrefs);
   const [mobileView, setMobileView] = useState('sheet'); // list | edit | sheet
   const [sidebar, setSidebar] = useState(true);
   const [toast, setToast] = useState('');
 
-  const active = useMemo(() => songs.find((s) => s.id === activeId) ?? null, [songs, activeId]);
+  const active = useMemo(() => visible.find((s) => s.id === activeId) ?? null, [visible, activeId]);
 
   /* ---------- 解析與調性 ---------- */
   const ast = useMemo(() => parseChordPro(active?.source ?? ''), [active?.source]);
@@ -50,10 +57,10 @@ export default function App() {
       const next = prev.map((s) => (s.id === activeId ? { ...s, ...patch } : s));
       const target = next.find((s) => s.id === activeId);
       clearTimeout(timer.current);
-      timer.current = setTimeout(() => db.saveSong(target), 500);
+      timer.current = setTimeout(() => { db.saveSong(target); scheduleSync(); }, 500);
       return next;
     });
-  }, [activeId]);
+  }, [activeId, scheduleSync]);
 
   // 歌名/歌手跟著 {title:} {artist:} 走，側欄才不會一直顯示「未命名」
   useEffect(() => {
@@ -64,13 +71,68 @@ export default function App() {
   }, [ast.meta.title, ast.meta.artist, ast.meta.subtitle]); // eslint-disable-line
 
   /* ---------- 動作 ---------- */
-  const notify = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2400); };
+  const notify = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2800); };
+
+  /* ---------- GitHub 同步 ---------- */
+  const syncing = useRef(false);
+
+  const runSync = useCallback(async (silent = false) => {
+    const cfg = db.getSyncConfig();
+    if (!db.isSyncReady(cfg)) { setSyncState('off'); return; }
+    if (syncing.current) return;              // 避免自動與手動同時觸發打架
+    syncing.current = true;
+    setSyncState('busy');
+    try {
+      const local = db.listAll();
+      const r = await syncNow(cfg, local);
+      const saved = db.replaceAll(r.songs);
+      setSongs(saved);
+      const next = { ...cfg, sha: r.sha, lastSync: new Date().toISOString() };
+      db.setSyncConfig(next);
+      setSyncCfg(next);
+      setSyncState('ok');
+      if (!silent) {
+        notify(r.firstTime ? '已建立雲端檔案，這台裝置的歌譜已上傳' :
+               r.pulled && r.pushed ? '已同步（雙向合併）' :
+               r.pushed ? '已上傳變更' :
+               r.pulled ? '已拉下其他裝置的變更' : '已是最新，沒有變更');
+      }
+    } catch (e) {
+      setSyncState('error');
+      notify(`同步失敗：${e.message}`);
+      console.error(e);
+    } finally {
+      syncing.current = false;
+    }
+  }, []);
+
+  // 開啟 App 時先拉一次
+  useEffect(() => {
+    if (db.isSyncReady(db.getSyncConfig())) runSync(true);
+    else setSyncState('off');
+  }, []); // eslint-disable-line
+
+  // 改完東西 8 秒後自動上傳（打字中不會一直打 API）
+  const syncTimer = useRef(null);
+  const scheduleSync = useCallback(() => {
+    if (!db.isSyncReady(db.getSyncConfig())) return;
+    clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => runSync(true), 8000);
+  }, [runSync]);
+
+  // 分頁重新可見時拉一次（手機切回來就是最新的）
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible') runSync(true); };
+    window.addEventListener('visibilitychange', onVis);
+    return () => window.removeEventListener('visibilitychange', onVis);
+  }, [runSync]);
 
   const handleCreate = () => {
     const s = db.createSong({ source: '{title: 未命名歌曲}\n{artist: }\n\n[C]在這裡開始寫\n' });
     setSongs(db.saveSong(s));
     setActiveId(s.id);
     setMobileView('edit');
+    scheduleSync();
   };
 
   const handleDelete = (id) => {
@@ -78,16 +140,18 @@ export default function App() {
     if (!confirm(`刪除「${s?.title}」？這個動作無法復原。`)) return;
     const next = db.deleteSong(id);
     setSongs(next);
-    if (activeId === id) setActiveId(next[0]?.id ?? null);
+    if (activeId === id) setActiveId(next.find((x) => !x.deletedAt)?.id ?? null);
+    scheduleSync();
   };
 
   const handleImport = async (file) => {
     try {
       const { added, updated } = await db.importJSON(file, 'merge');
-      const next = db.listSongs();
+      const next = db.listAll();
       setSongs(next);
-      setActiveId((cur) => cur ?? next[0]?.id ?? null);
+      setActiveId((cur) => cur ?? next.find((x) => !x.deletedAt)?.id ?? null);
       notify(`已匯入：新增 ${added} 首、更新 ${updated} 首`);
+      scheduleSync();
     } catch (e) {
       notify(`匯入失敗：${e.message}`);
     }
@@ -139,6 +203,25 @@ export default function App() {
           )}
           <button
             className={iconBtn}
+            onClick={() => (syncState === 'off' ? setSyncOpen(true) : runSync(false))}
+            onContextMenu={(e) => { e.preventDefault(); setSyncOpen(true); }}
+            title={
+              syncState === 'off' ? '設定裝置同步'
+              : syncState === 'busy' ? '同步中…'
+              : syncState === 'error' ? '同步失敗，點一下重試'
+              : syncCfg.lastSync ? `上次同步 ${new Date(syncCfg.lastSync).toLocaleTimeString('zh-TW')}（點一下立即同步、右鍵開設定）` : '點一下立即同步'
+            }
+            style={{ color: syncState === 'error' ? 'var(--danger)' : syncState === 'ok' ? 'var(--accent)' : undefined }}
+            aria-label="裝置同步"
+          >
+            {syncState === 'busy' ? <RefreshCw size={16} className="animate-spin" />
+              : syncState === 'off' ? <CloudOff size={16} />
+              : syncState === 'error' ? <CloudAlert size={16} />
+              : <Cloud size={16} />}
+          </button>
+
+          <button
+            className={iconBtn}
             onClick={() => setPrefs({ theme: prefs.theme === 'dark' ? 'light' : 'dark' })}
             title="切換深色 / 淺色"
           >
@@ -156,7 +239,7 @@ export default function App() {
           } ${mobileView === 'list' ? 'block' : 'hidden lg:block'}`}
         >
           <SongList
-            songs={songs}
+            songs={visible}
             activeId={activeId}
             onSelect={(id) => { setActiveId(id); setMobileView('sheet'); }}
             onCreate={handleCreate}
@@ -212,6 +295,30 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      {syncOpen && (
+        <SyncSettings
+          config={syncCfg}
+          status={syncCfg}
+          onClose={() => setSyncOpen(false)}
+          onSave={(c) => {
+            db.setSyncConfig(c);
+            setSyncCfg(c);
+            setSyncOpen(false);
+            notify('設定已存到這台裝置，開始同步…');
+            runSync(false);
+          }}
+          onClear={() => {
+            if (!confirm('要從這台裝置移除 token 嗎？歌譜會留著，但不再同步。')) return;
+            db.clearSyncConfig();
+            setSyncCfg(db.getSyncConfig());
+            setSyncState('off');
+            setSyncOpen(false);
+            notify('已移除 token。建議順手去 GitHub 把它 revoke 掉。');
+          }}
+          onSyncNow={() => { setSyncOpen(false); runSync(false); }}
+        />
+      )}
 
       {toast && (
         <div
