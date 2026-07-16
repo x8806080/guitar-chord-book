@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#14151a" />
+    <title>Chord Book — 吉他譜編輯與轉調</title>
+    <meta name="description" content="ChordPro 編輯器、即時和弦排版、自動轉調，資料存在你自己的瀏覽器。" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // 開場前先套主題，避免深色模式閃白
+      try {
+        const p = JSON.parse(localStorage.getItem('gcb.prefs.v1') || '{}');
+        document.documentElement.classList.toggle('dark', (p.theme ?? 'dark') === 'dark');
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
