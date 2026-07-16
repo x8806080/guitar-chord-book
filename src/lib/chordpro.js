@@ -121,16 +121,63 @@ export function collectChords(ast) {
   return out;
 }
 
+/* ------------------------------------------------------------------ *
+ * 斷行單元切割
+ * ------------------------------------------------------------------ */
+
+// 中日韓文字（含假名）：每個字都是合法斷行點
+const CJK_RE = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
+// 行首禁則：這些標點不可出現在行首 → 黏在前一個字後面
+const NO_LINE_START = /[，。、！？；：）〕】」』〉》︰…‥－～·,.!?;:)\]}]/;
+// 行尾禁則：這些標點不可出現在行尾 → 黏在後一個字前面
+const NO_LINE_END = /[（〔【「『〈《([{]/;
+
 /**
- * 把 {chord, text} 再切成「渲染單元」：
- * 文字依空白切開，和弦只掛在第一個單元上。
- * → 每個單元是一個 inline-block，換行只會發生在單元「之間」，
- *   因此任何螢幕寬度下和弦都不會與歌詞錯位。
+ * 把一段文字切成可斷行的最小單元
+ * - 拉丁文字：依空白切（單字不拆開）
+ * - CJK：逐字切（中文沒有空白，不逐字切在窄螢幕會整句溢出）
+ * - 標點：套用中文排版禁則，避免標點孤零零跑到行首
+ */
+export function splitText(text) {
+  const out = [];
+  const chars = [...String(text)];
+  let latin = '';
+  const flush = () => { if (latin) { out.push(latin); latin = ''; } };
+
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+
+    if (/\s/.test(ch)) {
+      flush();
+      out.push(ch);                    // 空白自成一單元，提供斷行點
+    } else if (NO_LINE_END.test(ch)) {
+      flush();
+      let unit = ch;                   // 開括號黏住下一個字
+      if (i + 1 < chars.length) unit += chars[++i];
+      while (i + 1 < chars.length && NO_LINE_START.test(chars[i + 1])) unit += chars[++i];
+      out.push(unit);
+    } else if (CJK_RE.test(ch)) {
+      flush();
+      let unit = ch;                   // 收尾標點黏住前一個字
+      while (i + 1 < chars.length && NO_LINE_START.test(chars[i + 1])) unit += chars[++i];
+      out.push(unit);
+    } else {
+      latin += ch;                     // 拉丁字母累積成單字
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
+ * 把 {chord, text} 切成「渲染單元」，和弦只掛在第一個單元上。
+ * → 每個單元是一個 inline-flex（上和弦／下歌詞），
+ *   換行只發生在單元「之間」，因此任何螢幕寬度下和弦都不會與歌詞錯位。
  */
 export function pairsToUnits(pairs) {
   const units = [];
   for (const p of pairs) {
-    const parts = String(p.text).split(/(\s+)/).filter((s) => s !== '');
+    const parts = splitText(p.text);
     if (parts.length === 0) {
       units.push({ chord: p.chord, text: '' });
       continue;
