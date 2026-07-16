@@ -17,7 +17,7 @@ const root = createRoot(document.getElementById('root'));
 const render = async (video) => act(async () => {
   root.render(React.createElement(VideoPlayer, { video, title: '測試曲' }));
 });
-const click = async (el) => act(async () => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+const click = async (el) => { if (!el) return false; await act(async () => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))); return true; };
 
 (async () => {
   const checks = [];
@@ -55,6 +55,25 @@ const click = async (el) => act(async () => el.dispatchEvent(new dom.window.Mous
      document.querySelectorAll('iframe').length === 1,
      `iframe 數量 ${document.querySelectorAll('iframe').length}`);
   ok('收起後可再展開', document.body.textContent.includes('展開畫面'));
+
+  // ---- 換歌時不可自動播放（回報的 bug）----
+  const other = parseYouTube('https://youtu.be/aaaaaaaaaaa');
+  await render(other);
+  ok('★★ 換歌後不可自動播放（要回到「播放原曲」按鈕）',
+     document.querySelectorAll('iframe').length === 0 && document.body.textContent.includes('播放原曲'),
+     `iframe 數量 ${document.querySelectorAll('iframe').length}`);
+
+  // 換回原本那首，一樣不該自動播
+  await render(video);
+  ok('★★ 切回上一首也不可自動播放', document.querySelectorAll('iframe').length === 0);
+
+  // 同一首歌重新 render（改字級、轉調、編輯歌詞）→ 音樂不可中斷
+  const playBtn2 = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('播放原曲'));
+  await click(playBtn2);
+  ok('重新按播放可正常載入', document.querySelectorAll('iframe').length === 1);
+  await render({ ...video });   // 同 id、新物件，模擬父層重新 render
+  ok('★★ 同一首歌重新 render 時音樂不中斷', document.querySelectorAll('iframe').length === 1,
+     `iframe 數量 ${document.querySelectorAll('iframe').length}`);
 
   let pass = 0;
   for (const [c, n, e] of checks) { console.log(`${c ? '✅' : '❌'} ${n}${e ? '  → ' + e : ''}`); if (c) pass++; }

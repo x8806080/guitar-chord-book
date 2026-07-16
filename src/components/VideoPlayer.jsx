@@ -1,18 +1,29 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Play, ChevronUp, ExternalLink } from 'lucide-react';
 import { buildEmbedUrl, buildWatchUrl } from '../lib/youtube.js';
 
 /**
  * YouTube 原曲播放器
  *
- * 兩個刻意的設計：
+ * 三個刻意的設計：
  *  1. 沒按播放前不載入 iframe —— 不浪費流量，也不在使用者沒要求時被 YouTube 追蹤。
  *  2. 載入後絕不 unmount。「收起」只是把高度縮成 0，音樂繼續播。
  *     練琴時你會想收起畫面專心看譜，但音樂不能停。
+ *  3. 換一首歌就重置成未載入。React 會重用同一個元件實例，
+ *     若不重置，loaded 會殘留成 true，新影片的 iframe 直接帶著 autoplay=1 掛上去 ——
+ *     結果就是「按過一次播放後，之後每首歌都自動播」。
  */
 export default function VideoPlayer({ video, title }) {
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(true);
+
+  // 換影片就回到未載入狀態。依賴 video.id 而非 video 物件本身 ——
+  // 父層每次 render 都會產生新物件，用物件當依賴會導致轉調、改字級時音樂被切斷。
+  const id = video?.id ?? null;
+  useEffect(() => {
+    setLoaded(false);
+    setOpen(true);
+  }, [id]);
 
   if (!video) return null;
 

@@ -76,7 +76,7 @@ export default function SongSheet({ ast, semitones = 0, useFlat = false, fontSiz
         )}
       </header>
 
-      <VideoPlayer video={video} title={meta.title} />
+      <VideoPlayer key={video?.id ?? 'no-video'} video={video} title={meta.title} />
 
       {showChords && chordList.length > 0 && (
         <section className="mb-8 border-b border-line pb-6">
