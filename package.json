@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:smoke": "esbuild src/App.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/app.cjs --external:react --external:react-dom && node test/smoke.cjs",
+    "test:all": "npm test && npm run test:smoke"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
@@ -17,6 +19,8 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "esbuild": "^0.28.1",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.7"

@@ -50,30 +50,13 @@ export default function App() {
   }, [prefs]);
   const setPrefs = (patch) => setPrefsState((p) => ({ ...p, ...patch }));
 
-  /* ---------- 存檔（500ms debounce，避免每個按鍵都寫 localStorage） ---------- */
-  const timer = useRef(null);
-  const patchActive = useCallback((patch) => {
-    setSongs((prev) => {
-      const next = prev.map((s) => (s.id === activeId ? { ...s, ...patch } : s));
-      const target = next.find((s) => s.id === activeId);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => { db.saveSong(target); scheduleSync(); }, 500);
-      return next;
-    });
-  }, [activeId, scheduleSync]);
-
-  // 歌名/歌手跟著 {title:} {artist:} 走，側欄才不會一直顯示「未命名」
-  useEffect(() => {
-    if (!active) return;
-    const t = ast.meta.title || '未命名歌曲';
-    const a = ast.meta.artist || ast.meta.subtitle || '';
-    if (t !== active.title || a !== active.artist) patchActive({ title: t, artist: a });
-  }, [ast.meta.title, ast.meta.artist, ast.meta.subtitle]); // eslint-disable-line
-
   /* ---------- 動作 ---------- */
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2800); };
 
   /* ---------- GitHub 同步 ---------- */
+  // 注意：runSync / scheduleSync 必須定義在 patchActive「之前」。
+  // const 有暫時性死區（TDZ），useCallback 的依賴陣列是定義當下就求值的，
+  // 若順序顛倒會在啟動瞬間丟 ReferenceError，整個 App 白/黑畫面。
   const syncing = useRef(false);
 
   const runSync = useCallback(async (silent = false) => {
@@ -106,12 +89,6 @@ export default function App() {
     }
   }, []);
 
-  // 開啟 App 時先拉一次
-  useEffect(() => {
-    if (db.isSyncReady(db.getSyncConfig())) runSync(true);
-    else setSyncState('off');
-  }, []); // eslint-disable-line
-
   // 改完東西 8 秒後自動上傳（打字中不會一直打 API）
   const syncTimer = useRef(null);
   const scheduleSync = useCallback(() => {
@@ -119,6 +96,32 @@ export default function App() {
     clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(() => runSync(true), 8000);
   }, [runSync]);
+
+  /* ---------- 存檔（500ms debounce，避免每個按鍵都寫 localStorage） ---------- */
+  const timer = useRef(null);
+  const patchActive = useCallback((patch) => {
+    setSongs((prev) => {
+      const next = prev.map((s) => (s.id === activeId ? { ...s, ...patch } : s));
+      const target = next.find((s) => s.id === activeId);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => { db.saveSong(target); scheduleSync(); }, 500);
+      return next;
+    });
+  }, [activeId, scheduleSync]);
+
+  // 歌名/歌手跟著 {title:} {artist:} 走，側欄才不會一直顯示「未命名」
+  useEffect(() => {
+    if (!active) return;
+    const t = ast.meta.title || '未命名歌曲';
+    const a = ast.meta.artist || ast.meta.subtitle || '';
+    if (t !== active.title || a !== active.artist) patchActive({ title: t, artist: a });
+  }, [ast.meta.title, ast.meta.artist, ast.meta.subtitle]); // eslint-disable-line
+
+  // 開啟 App 時先拉一次
+  useEffect(() => {
+    if (db.isSyncReady(db.getSyncConfig())) runSync(true);
+    else setSyncState('off');
+  }, []); // eslint-disable-line
 
   // 分頁重新可見時拉一次（手機切回來就是最新的）
   useEffect(() => {
