@@ -32,30 +32,60 @@ const META_ALIAS = {
 };
 
 /**
- * 拆解一行歌詞為 [{chord, text}, ...]
+ * 拆解一行歌詞為 [{chord, text, chordStart, chordEnd, textStart}, ...]
  * 規則：和弦「掛」在其後方的文字上；行首無和弦則 chord = null
+ *
+ * chordStart / chordEnd 是 `[C]` 這個標記在**整份原始碼**中的字元範圍，
+ * textStart 是其後方文字的起始位置。
+ * 有了這些座標，才能讓使用者直接在渲染好的樂譜上點和弦、改和弦、搬和弦 ——
+ * 改完能精準回寫原始碼，而不是重新產生一份（重產會弄丟排版與註解）。
+ *
+ * @param {string} line
+ * @param {number} lineOffset 這一行在整份原始碼中的起始位置
  */
-export function parseChordLine(line) {
-  const tokens = line.split(/(\[[^\]]*\])/g).filter((s) => s !== '');
+export function parseChordLine(line, lineOffset = 0) {
   const pairs = [];
-  for (const t of tokens) {
-    if (t.startsWith('[') && t.endsWith(']')) {
-      pairs.push({ chord: t.slice(1, -1).trim(), text: '' });
-    } else if (pairs.length && pairs[pairs.length - 1].text === '' && pairs[pairs.length - 1].chord) {
-      pairs[pairs.length - 1].text = t;
-    } else {
-      pairs.push({ chord: null, text: t });
-    }
+  const re = /\[([^\]]*)\]/g;
+  let last = 0;
+  let m;
+
+  const attachOrPush = (text, start) => {
+    const prev = pairs[pairs.length - 1];
+    if (prev && prev.chord && prev.text === '') prev.text = text;
+    else pairs.push({ chord: null, text, chordStart: null, chordEnd: null, textStart: lineOffset + start });
+  };
+
+  while ((m = re.exec(line))) {
+    const before = line.slice(last, m.index);
+    if (before) attachOrPush(before, last);
+    pairs.push({
+      chord: m[1].trim(),
+      text: '',
+      chordStart: lineOffset + m.index,
+      chordEnd: lineOffset + m.index + m[0].length,
+      textStart: lineOffset + m.index + m[0].length,
+    });
+    last = m.index + m[0].length;
   }
-  return pairs.length ? pairs : [{ chord: null, text: '' }];
+
+  const tail = line.slice(last);
+  if (tail) attachOrPush(tail, last);
+
+  return pairs.length
+    ? pairs
+    : [{ chord: null, text: '', chordStart: null, chordEnd: null, textStart: lineOffset }];
 }
 
 /** 主解析函式 */
 export function parseChordPro(source = '') {
+  // 先正規化換行。位置座標全部以正規化後的文字為準 ——
+  // 若不先統一，\r\n 會讓字元位置多算一格，回寫時就會切錯地方。
+  const text = String(source).replace(/\r\n?/g, '\n');
   const meta = {};
   const blocks = [];
   let current = null; // 目前累積中的 block
   let mode = 'verse'; // verse | chorus | tab
+  let offset = 0;     // 目前這一行在 text 中的起始位置
 
   const flush = () => {
     if (current && current.lines.length) blocks.push(current);
@@ -69,7 +99,10 @@ export function parseChordPro(source = '') {
     return current;
   };
 
-  for (const rawLine of String(source).replace(/\r\n?/g, '\n').split('\n')) {
+  for (const rawLine of text.split('\n')) {
+    const lineOffset = offset;
+    offset += rawLine.length + 1; // +1 是那個 \n
+
     const line = rawLine.trimEnd();
     const trimmed = line.trim();
 
@@ -104,12 +137,13 @@ export function parseChordPro(source = '') {
     if (mode === 'tab') {
       ensure('tab').lines.push({ type: 'text', text: line });
     } else {
-      ensure(mode).lines.push({ type: 'lyric', pairs: parseChordLine(line) });
+      ensure(mode).lines.push({ type: 'lyric', pairs: parseChordLine(line, lineOffset) });
     }
   }
   flush();
 
-  return { meta, blocks };
+  // 一併回傳正規化後的原始碼：回寫編輯時必須以它為基準，不能用原本的 source
+  return { meta, blocks, source: text };
 }
 
 /** 依出現順序抽出所有和弦字串（給 detectKey / 和弦總表用） */
@@ -183,12 +217,25 @@ export function pairsToUnits(pairs) {
   const units = [];
   for (const p of pairs) {
     const parts = splitText(p.text);
+    // 和弦只掛第一個單元；每個單元記住自己的文字在原始碼的位置，
+    // 這樣才能在任意單元「正上方」插入新和弦
+    let off = p.textStart ?? 0;
     if (parts.length === 0) {
-      units.push({ chord: p.chord, text: '' });
+      units.push({
+        chord: p.chord, text: '',
+        chordStart: p.chordStart ?? null, chordEnd: p.chordEnd ?? null, textStart: off,
+      });
       continue;
     }
     parts.forEach((part, i) => {
-      units.push({ chord: i === 0 ? p.chord : null, text: part });
+      units.push({
+        chord: i === 0 ? p.chord : null,
+        chordStart: i === 0 ? (p.chordStart ?? null) : null,
+        chordEnd: i === 0 ? (p.chordEnd ?? null) : null,
+        text: part,
+        textStart: off,
+      });
+      off += part.length;
     });
   }
   return units;

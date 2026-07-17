@@ -255,6 +255,8 @@ export default function App() {
               onFontSize={(v) => setPrefs({ fontSize: v })}
               showChords={prefs.showChords !== false}
               onToggleChords={() => setPrefs({ showChords: prefs.showChords === false })}
+              editable={prefs.sheetEditable === true}
+              onToggleEditable={() => setPrefs({ sheetEditable: prefs.sheetEditable !== true })}
             />
           )}
           <button
@@ -357,6 +359,8 @@ export default function App() {
                 useFlat={useFlat}
                 fontSize={prefs.fontSize}
                 showChords={prefs.showChords !== false}
+                editable={prefs.sheetEditable === true}
+                onSourceChange={(v) => patchActive({ source: v })}
               />
             ) : (
               <div className="grid h-full place-items-center px-6 text-center text-muted">

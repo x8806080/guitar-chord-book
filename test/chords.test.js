@@ -44,15 +44,28 @@ test('調性判斷', () => {
 
 test('ChordPro 拆行', () => {
   const pairs = parseChordLine('[C]Twinkle, twinkle, [F]little [C]star');
-  assert.deepEqual(pairs, [
-    { chord: 'C', text: 'Twinkle, twinkle, ' },
-    { chord: 'F', text: 'little ' },
-    { chord: 'C', text: 'star' },
+  assert.deepEqual(pairs.map((p) => [p.chord, p.text]), [
+    ['C', 'Twinkle, twinkle, '],
+    ['F', 'little '],
+    ['C', 'star'],
   ]);
 });
 
+test('★ 拆行時要記錄每個和弦在原始碼的座標（直接編輯樂譜靠這個）', () => {
+  const line = '[C]Twinkle, [F]little';
+  const pairs = parseChordLine(line, 0);
+  for (const p of pairs.filter((x) => x.chord)) {
+    assert.equal(line.slice(p.chordStart, p.chordEnd), `[${p.chord}]`, '座標必須切得出原本的標記');
+  }
+  // 帶 offset：模擬這行不是第一行
+  const off = parseChordLine(line, 100);
+  assert.equal(off.find((p) => p.chord).chordStart, 100);
+});
+
 test('行首無和弦', () => {
-  assert.deepEqual(parseChordLine('How I [C]wonder')[0], { chord: null, text: 'How I ' });
+  const p = parseChordLine('How I [C]wonder')[0];
+  assert.equal(p.chord, null);
+  assert.equal(p.text, 'How I ');
 });
 
 test('指令與段落', () => {

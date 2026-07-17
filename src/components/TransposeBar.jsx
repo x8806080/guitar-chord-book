@@ -1,5 +1,5 @@
 import React from 'react';
-import { Minus, Plus, RotateCcw, Type, Printer, Guitar } from 'lucide-react';
+import { Minus, Plus, RotateCcw, Type, Printer, Guitar, Lock, Unlock } from 'lucide-react';
 import { currentKeyLabel } from '../lib/chords.js';
 
 const btn =
@@ -21,6 +21,8 @@ export default function TransposeBar({
   onFontSize,
   showChords,
   onToggleChords,
+  editable,
+  onToggleEditable,
 }) {
   const label = currentKeyLabel(baseKey, semitones);
   const delta = semitones > 0 ? `+${semitones}` : semitones < 0 ? `${semitones}` : '原調';
@@ -70,6 +72,16 @@ export default function TransposeBar({
       </div>
 
       <span className="mx-1 h-6 w-px bg-line" />
+
+      <button
+        className={btn}
+        onClick={onToggleEditable}
+        title={editable ? '鎖定樂譜（練琴時避免誤觸）' : '解鎖：可直接點和弦編輯'}
+        aria-pressed={editable}
+        style={{ color: editable ? 'var(--accent)' : undefined }}
+      >
+        {editable ? <Unlock size={15} /> : <Lock size={15} />}
+      </button>
 
       <button
         className={btn}

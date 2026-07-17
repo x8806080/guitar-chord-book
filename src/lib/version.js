@@ -11,7 +11,7 @@
  * 「線上到底是不是最新版」。看版號最快。
  */
 
-export const VERSION = '20260717a';
+export const VERSION = '20260717b';
 
 /**
  * 字母序遞增：a→b、z→aa、az→ba、zz→aaa
