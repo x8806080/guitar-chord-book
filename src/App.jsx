@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Sun, PanelLeft, PenLine, Music4, Cloud, CloudOff, RefreshCw, CloudAlert } from 'lucide-react';
+import { Moon, Sun, PanelLeft, PenLine, Music4, Cloud, CloudOff, RefreshCw, CloudAlert, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 import Editor from './components/Editor.jsx';
 import SongSheet from './components/SongSheet.jsx';
@@ -13,6 +13,7 @@ import { detectKey, preferFlat } from './lib/chords.js';
 import * as db from './lib/storage.js';
 import { syncNow } from './lib/sync.js';
 import { useAutoScroll, snapSpeed, scrollToTop, SPEED_DEFAULT } from './lib/autoscroll.js';
+import { VERSION, formatVersion } from './lib/version.js';
 import { SAMPLE } from './lib/sample.js';
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
   const [prefs, setPrefsState] = useState(db.getPrefs);
   const [mobileView, setMobileView] = useState('sheet'); // list | edit | sheet
   const [sidebar, setSidebar] = useState(true);
+  const mainRef = useRef(null);
   const [toast, setToast] = useState('');
 
   const active = useMemo(() => visible.find((s) => s.id === activeId) ?? null, [visible, activeId]);
@@ -110,6 +112,30 @@ export default function App() {
       return next;
     });
   }, [activeId, scheduleSync]);
+
+  /* ---------- 編輯窗格寬度（可拖曳、可收折） ---------- */
+  const EDITOR_MIN = 18;
+  const EDITOR_MAX = 70;
+  const editorWidth = Math.min(EDITOR_MAX, Math.max(EDITOR_MIN, prefs.editorWidth ?? 42));
+  const editorOpen = prefs.editorOpen !== false;
+  const dragging = useRef(false);
+
+  const onDragStart = (e) => {
+    dragging.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  };
+  const onDragMove = (e) => {
+    if (!dragging.current || !mainRef.current) return;
+    const rect = mainRef.current.getBoundingClientRect();
+    // 用百分比而非像素，換螢幕尺寸時比例才不會跑掉
+    const pct = ((e.clientX - rect.left) / rect.width) * 100;
+    setPrefs({ editorWidth: Math.min(EDITOR_MAX, Math.max(EDITOR_MIN, pct)) });
+  };
+  const onDragEnd = (e) => {
+    dragging.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
 
   /* ---------- 自動捲動 ---------- */
   const sheetRef = useRef(null);
@@ -198,9 +224,23 @@ export default function App() {
           <PanelLeft size={16} />
         </button>
 
-        <div className="mr-1 flex items-center gap-2">
-          <Music4 size={18} style={{ color: 'var(--chord)' }} />
+        <button
+          className={`${iconBtn} hidden lg:inline-flex`}
+          onClick={() => setPrefs({ editorOpen: !editorOpen })}
+          title={editorOpen ? '收起編輯器' : '展開編輯器'}
+          aria-pressed={editorOpen}
+        >
+          {editorOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+        </button>
+
+        <div className="mr-1 flex items-baseline gap-2">
           <span className="font-display text-[15px] font-bold tracking-tight">Chord Book</span>
+          <span
+            className="font-chord text-[10px] text-muted"
+            title={`修改版次 ${formatVersion(VERSION)}`}
+          >
+            {VERSION}
+          </span>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -247,7 +287,7 @@ export default function App() {
       </header>
 
       {/* ---- 主體 ---- */}
-      <main className="flex min-h-0 flex-1">
+      <main ref={mainRef} className="flex min-h-0 flex-1">
         {/* 側欄：桌機常駐，手機切到「清單」分頁才出現 */}
         <aside
           className={`w-full shrink-0 border-r border-line bg-surface lg:w-72 ${
@@ -265,11 +305,12 @@ export default function App() {
           />
         </aside>
 
-        {/* 編輯區：桌機佔左半，手機切到「編輯」分頁才出現 */}
+        {/* 編輯區：桌機寬度可拖曳、可收折；手機切到「編輯」分頁才出現 */}
         <section
-          className={`min-h-0 w-full border-r border-line bg-surface lg:block lg:w-[42%] lg:max-w-[560px] ${
-            mobileView === 'edit' ? 'block' : 'hidden'
+          className={`min-h-0 w-full bg-surface ${mobileView === 'edit' ? 'block' : 'hidden'} ${
+            editorOpen ? 'lg:block' : 'lg:hidden'
           }`}
+          style={{ flex: `0 0 ${editorWidth}%` }}
         >
           {active ? (
             <Editor value={active.source} onChange={(v) => patchActive({ source: v })} />
@@ -278,8 +319,36 @@ export default function App() {
           )}
         </section>
 
+        {/* 拖曳分隔線：只有桌機需要，手機是分頁切換 */}
+        {editorOpen && (
+          <div
+            role="separator"
+            aria-label="調整編輯器寬度"
+            aria-orientation="vertical"
+            aria-valuenow={Math.round(editorWidth)}
+            aria-valuemin={EDITOR_MIN}
+            aria-valuemax={EDITOR_MAX}
+            tabIndex={0}
+            onPointerDown={onDragStart}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+            onPointerCancel={onDragEnd}
+            onDoubleClick={() => setPrefs({ editorWidth: 42 })}
+            onKeyDown={(e) => {
+              // 鍵盤也要能調（拖曳對某些人來說很難操作）
+              if (e.key === 'ArrowLeft') setPrefs({ editorWidth: Math.max(EDITOR_MIN, editorWidth - 2) });
+              if (e.key === 'ArrowRight') setPrefs({ editorWidth: Math.min(EDITOR_MAX, editorWidth + 2) });
+            }}
+            title="拖曳調整寬度，雙擊還原"
+            className="no-print group relative hidden w-[5px] shrink-0 cursor-col-resize touch-none border-x border-line bg-surface lg:block"
+          >
+            <span className="pointer-events-none absolute inset-y-0 left-1/2 w-[3px] -translate-x-1/2 rounded-full opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                  style={{ background: 'var(--accent)' }} />
+          </div>
+        )}
+
         {/* 樂譜區 */}
-        <div className={`relative min-h-0 w-full lg:block ${mobileView === 'sheet' ? 'block' : 'hidden'}`}>
+        <div className={`relative min-h-0 w-full flex-1 lg:block ${mobileView === 'sheet' ? 'block' : 'hidden'}`}>
           <section ref={sheetRef} className="h-full overflow-y-auto">
             {active ? (
               <SongSheet

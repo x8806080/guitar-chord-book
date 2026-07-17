@@ -72,6 +72,24 @@ const App = require('../.smoke/app.cjs').default;
      [...document.querySelectorAll('#root rect')].some((r) => parseFloat(r.getAttribute('rx') || 0) > 3),
      `rect 共 ${document.querySelectorAll('#root rect').length} 個`);
 
+  // 版次
+  const { VERSION } = require('../.smoke/version.cjs');
+  ok('★ 版次有顯示在畫面上', html.includes(VERSION), `版次 ${VERSION}`);
+
+  // 編輯窗格：拖曳分隔線
+  const sep = document.querySelector('[role="separator"]');
+  ok('★ 有拖曳分隔線', Boolean(sep));
+  ok('★ 分隔線有無障礙屬性（鍵盤也能調）',
+     sep?.getAttribute('aria-valuenow') && sep?.getAttribute('tabindex') === '0',
+     `valuenow=${sep?.getAttribute('aria-valuenow')}`);
+  ok('★ 分隔線關掉觸控預設行為（不然手機拖曳會跟捲動打架）',
+     sep?.className.includes('touch-none'));
+
+  // 歌單分組
+  ok('★ 歌單有分組標題', [...document.querySelectorAll('#root button')]
+     .some((b) => b.getAttribute('aria-expanded') !== null));
+  ok('★ 有分組/平鋪切換鈕', html.includes('依歌手分組') || html.includes('改成平鋪清單'));
+
   let pass = 0;
   for (const [s, n, e] of checks) {
     console.log(`${s === 'PASS' ? '✅' : '❌'} ${n}${e ? '  → ' + e : ''}`);

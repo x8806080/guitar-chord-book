@@ -8,8 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
-    "test:smoke": "esbuild src/App.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/app.cjs --external:react --external:react-dom && esbuild src/components/SyncSettings.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/sync.cjs --external:react --external:react-dom && esbuild src/components/ScrollControl.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/scroll.cjs --external:react --external:react-dom && esbuild src/components/VideoPlayer.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/video.cjs --external:react --external:react-dom && esbuild src/config.js --bundle --format=cjs --platform=neutral --outfile=.smoke/config.cjs && esbuild src/lib/youtube.js --bundle --format=cjs --platform=neutral --outfile=.smoke/yt.cjs && node test/smoke.cjs && node test/smoke-sync.cjs && node test/smoke-scroll.cjs && node test/smoke-video.cjs",
-    "test:all": "npm test && npm run test:smoke"
+    "test:smoke": "esbuild src/App.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/app.cjs --external:react --external:react-dom && esbuild src/components/SyncSettings.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/sync.cjs --external:react --external:react-dom && esbuild src/components/ScrollControl.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/scroll.cjs --external:react --external:react-dom && esbuild src/components/VideoPlayer.jsx --bundle --format=cjs --platform=browser --outfile=.smoke/video.cjs --external:react --external:react-dom && esbuild src/config.js --bundle --format=cjs --platform=neutral --outfile=.smoke/config.cjs && esbuild src/lib/youtube.js --bundle --format=cjs --platform=neutral --outfile=.smoke/yt.cjs && esbuild src/lib/version.js --bundle --format=cjs --platform=neutral --outfile=.smoke/version.cjs && node test/smoke.cjs && node test/smoke-sync.cjs && node test/smoke-scroll.cjs && node test/smoke-video.cjs",
+    "test:all": "npm test && npm run test:smoke",
+    "bump": "node scripts/bump.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
