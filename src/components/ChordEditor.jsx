@@ -9,6 +9,14 @@ import { ArrowLeft, ArrowRight, X } from 'lucide-react';
  *    按鈕點一下移一個字，反而更快也更準。
  *  - 輸入框自動全選：多數情況是整個換掉，不是改一個字母。
  *  - Enter 存、Esc 取消，跟所有編輯器一致。
+ *
+ * 方向鍵的衝突處理：
+ *   在輸入框裡，方向鍵本來是移動游標。硬搶過來會讓人沒辦法編輯文字。
+ *   Alt+方向鍵不能用 —— Chrome 的 Alt+← 是「返回上一頁」，會直接離開網站。
+ *   所以改看「選取狀態」：
+ *     剛點開和弦時是全選 → 此時按方向鍵幾乎都是想搬和弦，就搬。
+ *     一旦開始打字就不再是全選 → 方向鍵回歸標準的游標移動。
+ *   想搬完再回到移動模式？Ctrl+A 全選即可。
  */
 export default function ChordEditor({ value, onCommit, onMove, onDelete, onClose, hint }) {
   const [text, setText] = useState(value);
@@ -46,8 +54,17 @@ export default function ChordEditor({ value, onCommit, onMove, onDelete, onClose
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation(); // 不要讓空白鍵去觸發自動捲動、+ - 去觸發轉調
-            if (e.key === 'Enter') commit();
-            if (e.key === 'Escape') onClose();
+            if (e.key === 'Enter') { commit(); return; }
+            if (e.key === 'Escape') { onClose(); return; }
+
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              const el = e.currentTarget;
+              const allSelected =
+                el.value.length > 0 && el.selectionStart === 0 && el.selectionEnd === el.value.length;
+              if (!allSelected) return; // 使用者正在編輯文字，讓游標正常移動
+              e.preventDefault();
+              onMove(e.key === 'ArrowRight' ? 1 : -1);
+            }
           }}
           spellCheck={false}
           autoCapitalize="off"
@@ -83,7 +100,15 @@ export default function ChordEditor({ value, onCommit, onMove, onDelete, onClose
       </div>
 
       {/* 轉調中要講清楚會寫回什麼，不然使用者會不知道原調被改成什麼 */}
-      {hint && <p className="px-0.5 font-chord text-[10px] text-muted">{hint}</p>}
+      <p className="px-0.5 font-chord text-[10px] text-muted">
+        {hint && (
+          <>
+            <span style={{ color: 'var(--chord)' }}>{hint}</span>
+            {' · '}
+          </>
+        )}
+        ← → 移動
+      </p>
     </div>
   );
 }

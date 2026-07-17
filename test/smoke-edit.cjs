@@ -80,7 +80,38 @@ const reset = async (src, over = {}) => {
   await click([...document.querySelectorAll('[role="dialog"] button')].find((b) => b.getAttribute('aria-label') === '往左移一個字'));
   ok('★ 左移回去', source === '[C]Twinkle, [Am7]little [C]star', source);
 
+  // ---- 鍵盤方向鍵移動 ----
+  await reset('[C]Twinkle, [F]little [C]star');
+  await click(chordBtn('F'));
+  const kin = document.querySelector('[role="dialog"] input');
+  ok('★ 剛點開和弦時輸入框是全選狀態',
+     kin.selectionStart === 0 && kin.selectionEnd === kin.value.length,
+     `sel ${kin.selectionStart}..${kin.selectionEnd} / len ${kin.value.length}`);
+
+  await key(kin, 'ArrowRight');
+  ok('★★ 全選狀態按 → 直接搬和弦', source === '[C]Twinkle, l[F]ittle [C]star', source);
+
+  const kin2 = document.querySelector('[role="dialog"] input');
+  await key(kin2, 'ArrowRight');
+  ok('★★ 可連按（搬完仍保持全選）', source === '[C]Twinkle, li[F]ttle [C]star', source);
+
+  const kin3 = document.querySelector('[role="dialog"] input');
+  await key(kin3, 'ArrowLeft');
+  ok('★★ 按 ← 搬回去', source === '[C]Twinkle, l[F]ittle [C]star', source);
+
+  // 開始打字後就不再是全選，方向鍵必須回歸游標移動
+  const kin4 = document.querySelector('[role="dialog"] input');
+  await type(kin4, 'Am');
+  ok('★ 打字後不再是全選', !(kin4.selectionStart === 0 && kin4.selectionEnd === kin4.value.length));
+  const before = source;
+  await key(kin4, 'ArrowLeft');
+  ok('★★ 編輯文字中按方向鍵不可搬和弦（不然沒法改字）', source === before, source);
+
+  ok('★ 編輯框上有提示方向鍵可用', document.body.textContent.includes('← → 移動'));
+  await key(kin4, 'Escape');
+
   // ---- 刪除 ----
+  await reset('[C]Twinkle, [Am7]little [C]star');
   await click(chordBtn('Am7'));
   await click([...document.querySelectorAll('[role="dialog"] button')].find((b) => b.getAttribute('aria-label') === '刪除這個和弦'));
   ok('★★ 刪和弦不會動到歌詞', source === '[C]Twinkle, little [C]star', source);
