@@ -1,16 +1,16 @@
-const { JSDOM } = require('/home/claude/guitar-chord-book/node_modules/jsdom');
+const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-  url: 'https://x8806080.github.io/guitar-chord-book/', pretendToBeVisual: true,
+  url: 'https://example.github.io/app/', pretendToBeVisual: true,
 });
 for (const k of ['window','document','navigator','localStorage','HTMLElement','Element','Node','getComputedStyle'])
   global[k] = k === 'window' ? dom.window : dom.window[k];
 global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-const React = require('/home/claude/guitar-chord-book/node_modules/react');
+const React = require('react');
 const { act } = React;
-const { createRoot } = require('/home/claude/guitar-chord-book/node_modules/react-dom/client');
-const ScrollControl = require('/home/claude/guitar-chord-book/.smoke/scroll.cjs').default;
+const { createRoot } = require('react-dom/client');
+const ScrollControl = require('../.smoke/scroll.cjs').default;
 
 const click = async (el) => act(async () => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
 const btn = (label) => [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === label);

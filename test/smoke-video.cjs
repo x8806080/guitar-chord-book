@@ -1,17 +1,17 @@
-const { JSDOM } = require('/home/claude/guitar-chord-book/node_modules/jsdom');
+const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-  url: 'https://x8806080.github.io/guitar-chord-book/', pretendToBeVisual: true,
+  url: 'https://example.github.io/app/', pretendToBeVisual: true,
 });
 for (const k of ['window','document','navigator','localStorage','HTMLElement','Element','Node','getComputedStyle'])
   global[k] = k === 'window' ? dom.window : dom.window[k];
 global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-const React = require('/home/claude/guitar-chord-book/node_modules/react');
+const React = require('react');
 const { act } = React;
-const { createRoot } = require('/home/claude/guitar-chord-book/node_modules/react-dom/client');
-const VideoPlayer = require('/home/claude/guitar-chord-book/.smoke/video.cjs').default;
-const { parseYouTube } = require('/home/claude/guitar-chord-book/.smoke/yt.cjs');
+const { createRoot } = require('react-dom/client');
+const VideoPlayer = require('../.smoke/video.cjs').default;
+const { parseYouTube } = require('../.smoke/yt.cjs');
 
 const root = createRoot(document.getElementById('root'));
 const render = async (video) => act(async () => {

@@ -1,10 +1,10 @@
 /**
  * smoke-sync.cjs — 模擬使用者在同步設定面板打字，檢查按鈕是否正確啟用
  */
-const { JSDOM } = require('/home/claude/guitar-chord-book/node_modules/jsdom');
+const { JSDOM } = require('jsdom');
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-  url: 'https://x8806080.github.io/guitar-chord-book/',
+  url: 'https://example.github.io/app/',
   pretendToBeVisual: true,
 });
 global.window = dom.window;
@@ -19,10 +19,10 @@ global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 global.IS_REACT_ACT_ENVIRONMENT = true;
 global.fetch = async () => { throw new Error('no network'); };
 
-const React = require('/home/claude/guitar-chord-book/node_modules/react');
+const React = require('react');
 const { act } = React;
-const { createRoot } = require('/home/claude/guitar-chord-book/node_modules/react-dom/client');
-const SyncSettings = require('/home/claude/guitar-chord-book/.smoke/sync.cjs').default;
+const { createRoot } = require('react-dom/client');
+const SyncSettings = require('../.smoke/sync.cjs').default;
 
 // 在受控元件裡塞值，必須用原生 setter 再派發 input 事件，React 才會收到 onChange
 const type = async (el, value) => {
@@ -33,7 +33,7 @@ const type = async (el, value) => {
   });
 };
 
-const { SYNC_DEFAULTS } = require('/home/claude/guitar-chord-book/.smoke/config.cjs');
+const { SYNC_DEFAULTS } = require('../.smoke/config.cjs');
 const cfg = { token: '', ...SYNC_DEFAULTS, sha: null, lastSync: null };
 
 let savedCfg = null;
@@ -78,7 +78,7 @@ let savedCfg = null;
 
   // 模擬使用者依序填入三個必填欄位
   // ★ 核心情境：只貼 token，其他都不用碰
-  await type(tok, 'github_pat_11ABCDEFG0abcdefghijklmnop');
+  await type(tok, 'github_pat_11FAKEFAKE0FAKEFAKEFAKEFAKE');
   ok('打完 token 後，值有進 state', tok.value.length > 10, `實際: "${tok.value}"`);
 
   await act(async () => { saveBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
@@ -90,7 +90,7 @@ let savedCfg = null;
      savedCfg ? `${savedCfg.owner}/${savedCfg.repo}` : '-');
 
   // token 前後空白（從網頁複製很常見）
-  await type(tok, '  github_pat_11ABCDEFG0abcdefghijklmnop  ');
+  await type(tok, '  github_pat_11FAKEFAKE0FAKEFAKEFAKEFAKE  ');
   await act(async () => { saveBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
   ok('★ token 前後有空白也能存（貼上常見）', savedCfg?.token.startsWith('github_pat_'),
      savedCfg ? JSON.stringify(savedCfg.token) : '-');

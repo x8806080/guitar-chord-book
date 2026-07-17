@@ -2,10 +2,10 @@
  * smoke.cjs — 在真實 DOM（jsdom）裡把 App 掛起來跑
  * 目的：抓「build 會過、但一執行就炸」的錯（TDZ、undefined import、effect 內錯誤）
  */
-const { JSDOM } = require('/home/claude/guitar-chord-book/node_modules/jsdom');
+const { JSDOM } = require('jsdom');
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-  url: 'https://x8806080.github.io/guitar-chord-book/',
+  url: 'https://example.github.io/app/',
   pretendToBeVisual: true,
 });
 
@@ -29,10 +29,10 @@ const errors = [];
 const origErr = console.error;
 console.error = (...a) => { errors.push(a.map(String).join(' ')); };
 
-const React = require('/home/claude/guitar-chord-book/node_modules/react');
-const { createRoot } = require('/home/claude/guitar-chord-book/node_modules/react-dom/client');
+const React = require('react');
+const { createRoot } = require('react-dom/client');
 const { act } = React;
-const App = require('/home/claude/guitar-chord-book/.smoke/app.cjs').default;
+const App = require('../.smoke/app.cjs').default;
 
 (async () => {
   const root = createRoot(document.getElementById('root'));
