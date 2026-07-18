@@ -8,6 +8,7 @@
  */
 
 import { SYNC_DEFAULTS } from '../config.js';
+import { getAllCustom, replaceAllCustom } from './customshapes.js';
 
 const KEY = 'gcb.songs.v1';
 const PREFS = 'gcb.prefs.v1';
@@ -122,6 +123,7 @@ export function exportJSON() {
     schema: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     songs: listSongs(),
+    customShapes: getAllCustom(),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -138,6 +140,11 @@ export async function importJSON(file, mode = 'merge') {
   const incoming = Array.isArray(data) ? data : data.songs;
   if (!Array.isArray(incoming)) throw new Error('檔案格式不符：找不到 songs 陣列');
 
+  if (data.customShapes && typeof data.customShapes === 'object') {
+    // 自訂指型一律合併（同 key 取較新），不隨 replace 模式整包覆蓋
+    const { mergeCustom, getAllCustom: getAll } = await import('./customshapes.js');
+    replaceAllCustom(mergeCustom(getAll(), data.customShapes));
+  }
   if (mode === 'replace') {
     write(KEY, incoming);
     return { added: incoming.length, updated: 0 };

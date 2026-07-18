@@ -126,24 +126,29 @@ export async function pullRemote({ token, owner, repo, path, branch }) {
   const url = `${API}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}&t=${Date.now()}`;
   const res = await fetch(url, { headers: headers(token), cache: 'no-store' });
 
-  if (res.status === 404) return { songs: [], sha: null, firstTime: true };
+  if (res.status === 404) return { songs: [], customShapes: {}, sha: null, firstTime: true };
   if (!res.ok) throw await toError(res);
 
   const j = await res.json();
   try {
     const data = JSON.parse(fromBase64(j.content));
-    return { songs: Array.isArray(data) ? data : data.songs ?? [], sha: j.sha, firstTime: false };
+    return {
+      songs: Array.isArray(data) ? data : data.songs ?? [],
+      customShapes: (!Array.isArray(data) && data.customShapes) || {},
+      sha: j.sha, firstTime: false,
+    };
   } catch {
     throw new SyncError('BAD_JSON', `遠端的 ${path} 不是合法 JSON，請手動檢查或刪掉重來。`);
   }
 }
 
 /** 推遠端；sha 是「我看到的版本」，GitHub 用它做樂觀鎖，不符會回 409 */
-export async function pushRemote({ token, owner, repo, path, branch }, songs, sha) {
+export async function pushRemote({ token, owner, repo, path, branch }, songs, sha, extra = {}) {
   const payload = {
     schema: 1,
     updatedAt: new Date().toISOString(),
     songs,
+    ...extra,
   };
   const body = {
     message: `chore(sync): ${songs.filter((s) => !s.deletedAt).length} songs @ ${new Date().toISOString()}`,
@@ -166,15 +171,29 @@ export async function pushRemote({ token, owner, repo, path, branch }, songs, sh
  * 完整一次同步：pull → merge → push（沒變化就不 push）
  * @returns {{songs, sha, pushed, pulled, firstTime}}
  */
-export async function syncNow(cfg, localSongs) {
-  const { songs: remote, sha, firstTime } = await pullRemote(cfg);
+export async function syncNow(cfg, localSongs, localCustom = {}) {
+  const raw = await pullRemote(cfg);
+  const { songs: remote, sha, firstTime } = raw;
+  const remoteCustom = raw.customShapes || {};
   const merged = mergeSongs(localSongs, remote);
+  const mergedCustom = mergeCustomShapes(localCustom, remoteCustom);
 
-  const pulled = !sameSongs(merged, localSongs);
-  const pushed = !sameSongs(merged, remote);
+  const pulled = !sameSongs(merged, localSongs) || !sameCustom(mergedCustom, localCustom);
+  const pushed = !sameSongs(merged, remote) || !sameCustom(mergedCustom, remoteCustom);
 
   let newSha = sha;
-  if (pushed) newSha = await pushRemote(cfg, merged, sha);
+  if (pushed) newSha = await pushRemote(cfg, merged, sha, { customShapes: mergedCustom });
 
-  return { songs: merged, sha: newSha, pushed, pulled, firstTime };
+  return { songs: merged, custom: mergedCustom, sha: newSha, pushed, pulled, firstTime };
 }
+
+/** 自訂指型合併：同 key 取較新（跟歌譜同一套 last-write-wins） */
+export function mergeCustomShapes(local = {}, remote = {}) {
+  const out = { ...remote };
+  for (const [k, v] of Object.entries(local || {})) {
+    if (!out[k] || (v?.updatedAt || '') >= (out[k]?.updatedAt || '')) out[k] = v;
+  }
+  return out;
+}
+
+const sameCustom = (a = {}, b = {}) => JSON.stringify(a) === JSON.stringify(b);

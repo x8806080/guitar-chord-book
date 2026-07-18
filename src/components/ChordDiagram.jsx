@@ -1,5 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { generateShapes } from '../lib/chordshapes.js';
+import { getCustomShape } from '../lib/customshapes.js';
+import FretboardEditor from './FretboardEditor.jsx';
 
 /**
  * 和弦指板圖（左手按法）
@@ -113,9 +116,13 @@ export function ChordDiagram({ shape, size = 1, className = '' }) {
 /**
  * 一格：和弦名 + 圖。點擊可切換到下一個指型。
  */
-export function ChordCard({ name, shapeIndex = 0, onCycle, size = 1 }) {
-  const shapes = useMemo(() => generateShapes(name, { maxResults: 4 }), [name]);
+export function ChordCard({ name, shapeIndex = 0, onCycle, size = 1, editable = false, onCustomChange, customVersion = 0 }) {
+  const [editing, setEditing] = useState(false);
+  // customVersion 改變（存/刪自訂）時強制重算
+  const shapes = useMemo(() => generateShapes(name, { maxResults: 4 }), [name, customVersion]);
   const shape = shapes[shapeIndex % Math.max(shapes.length, 1)] ?? null;
+  const hasCustom = useMemo(() => Boolean(getCustomShape(name)), [name, customVersion]);
+  const isCustom = shape?.source === 'custom';
 
   const body = (
     <>
@@ -129,6 +136,45 @@ export function ChordCard({ name, shapeIndex = 0, onCycle, size = 1 }) {
       )}
     </>
   );
+
+  const editor = editing && (
+    <FretboardEditor
+      chordName={name}
+      initialFrets={shape?.frets}
+      hasCustom={hasCustom}
+      onSave={(sh) => { onCustomChange?.('save', name, sh); setEditing(false); }}
+      onDelete={() => { onCustomChange?.('delete', name); setEditing(false); }}
+      onClose={() => setEditing(false)}
+    />
+  );
+
+  // 編輯模式：圖上疊一個小鉛筆鈕
+  if (editable) {
+    return (
+      <div className="relative flex select-none flex-col items-center gap-1">
+        <div
+          className="flex flex-col items-center gap-1 rounded-lg p-1"
+          style={{ outline: isCustom ? '1.5px solid var(--chord)' : undefined, outlineOffset: 2, borderRadius: 8 }}
+        >
+          {onCycle && shapes.length > 1 ? (
+            <button onClick={() => onCycle(name, (shapeIndex + 1) % shapes.length)} className="flex flex-col items-center gap-1" title="點一下換按法">
+              {body}
+            </button>
+          ) : body}
+        </div>
+        <button
+          onClick={() => setEditing(true)}
+          className="absolute -right-1 -top-1 inline-flex h-5 w-5 items-center justify-center rounded-full border border-line shadow-sm"
+          style={{ background: 'var(--surface)', color: isCustom ? 'var(--chord)' : 'var(--muted)' }}
+          title={hasCustom ? '編輯自訂指型' : '自訂這個和弦的指型'}
+          aria-label={`編輯 ${name} 指型`}
+        >
+          <Pencil size={11} />
+        </button>
+        {editor}
+      </div>
+    );
+  }
 
   // 只有一種指型時不做成按鈕，避免點了沒反應
   if (!onCycle || shapes.length <= 1) {

@@ -11,6 +11,7 @@ import ScrollControl from './components/ScrollControl.jsx';
 import { parseChordPro, collectChords } from './lib/chordpro.js';
 import { detectKey, preferFlat } from './lib/chords.js';
 import * as db from './lib/storage.js';
+import * as custom from './lib/customshapes.js';
 import { syncNow } from './lib/sync.js';
 import { useAutoScroll, snapSpeed, scrollToTop, SPEED_DEFAULT } from './lib/autoscroll.js';
 import { VERSION, formatVersion } from './lib/version.js';
@@ -29,6 +30,14 @@ export default function App() {
   const [syncCfg, setSyncCfg] = useState(db.getSyncConfig);
   const [syncOpen, setSyncOpen] = useState(false);
   const [highlight, setHighlight] = useState(null); // 樂譜上選到的和弦/歌詞，對應原始碼的範圍
+  const [customVer, setCustomVer] = useState(0);     // 自訂指型改一次就 +1，觸發和弦圖重算
+
+  const handleCustomChange = useCallback((action, name, shape) => {
+    if (action === 'save') custom.saveCustomShape(name, shape);
+    if (action === 'delete') custom.deleteCustomShape(name);
+    setCustomVer((v) => v + 1);
+    notify(action === 'delete' ? '已刪除自訂指型' : `已儲存 ${name} 的自訂指型`);
+  }, []);
   const [syncState, setSyncState] = useState('idle'); // idle | busy | ok | error | off
   const [prefs, setPrefsState] = useState(db.getPrefs);
   const [mobileView, setMobileView] = useState('sheet'); // list | edit | sheet
@@ -72,9 +81,10 @@ export default function App() {
     setSyncState('busy');
     try {
       const local = db.listAll();
-      const r = await syncNow(cfg, local);
+      const r = await syncNow(cfg, local, custom.getAllCustom());
       const saved = db.replaceAll(r.songs);
       setSongs(saved);
+      if (r.custom) { custom.replaceAllCustom(r.custom); setCustomVer((v) => v + 1); }
       const next = { ...cfg, sha: r.sha, lastSync: new Date().toISOString() };
       db.setSyncConfig(next);
       setSyncCfg(next);
@@ -363,6 +373,8 @@ export default function App() {
                 editable={prefs.sheetEditable === true}
                 onSourceChange={(v) => patchActive({ source: v })}
                 onHighlight={setHighlight}
+                onCustomChange={handleCustomChange}
+                customVersion={customVer}
               />
             ) : (
               <div className="grid h-full place-items-center px-6 text-center text-muted">

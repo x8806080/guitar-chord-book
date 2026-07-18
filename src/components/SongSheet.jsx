@@ -154,7 +154,7 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag
 
 export default function SongSheet({
   ast, semitones = 0, useFlat = false, fontSize = 18, showChords = true,
-  editable = false, onSourceChange, onHighlight,
+  editable = false, onSourceChange, onHighlight, onCustomChange, customVersion = 0,
 }) {
   const { meta, blocks } = ast;
 
@@ -343,6 +343,9 @@ export default function SongSheet({
                 name={name}
                 shapeIndex={shapeIdx[name] ?? 0}
                 onCycle={cycle}
+                editable={editable}
+                customVersion={customVersion}
+                onCustomChange={onCustomChange}
               />
             ))}
           </div>

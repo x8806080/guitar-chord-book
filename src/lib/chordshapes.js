@@ -13,6 +13,7 @@
  */
 
 import { parseChord, noteToPitch } from './chords.js';
+import { getCustomShape } from './customshapes.js';
 
 export const STANDARD_TUNING = [4, 9, 2, 7, 11, 4]; // EADGBE
 const MAX_FRET = 12;
@@ -262,16 +263,27 @@ const CACHE = new Map();
  *          source: 'open'（標準開放指型）| 'caged'（移動型）| 'algo'（演算法）
  */
 export function generateShapes(chordStr, opts = {}) {
-  const { tuning = STANDARD_TUNING, maxResults = 4 } = opts;
+  const { tuning = STANDARD_TUNING, maxResults = 4, includeCustom = true } = opts;
+  // 有自訂指型時不吃快取 —— 自訂會即時改，快取會讓畫面停在舊版
+  const custom = includeCustom ? getCustomShape(chordStr) : null;
   const cacheKey = chordStr + '|' + maxResults + '|' + tuning.join('');
-  if (CACHE.has(cacheKey)) return CACHE.get(cacheKey);
+  if (!custom && CACHE.has(cacheKey)) return CACHE.get(cacheKey);
   const c = parseChord(chordStr);
-  if (!c) { CACHE.set(cacheKey, []); return []; }
+  if (!c) {
+    if (custom) { const a = analyzeShape(custom.frets); if (a) return [{ ...a, source: 'custom', score: -1000 }]; }
+    CACHE.set(cacheKey, []); return [];
+  }
 
   const rootPitch = noteToPitch(c.root);
-  if (rootPitch === null) { CACHE.set(cacheKey, []); return []; }
+  if (rootPitch === null) { if (!custom) CACHE.set(cacheKey, []); return []; }
 
   const out = [];
+
+  // 0. 自訂指型永遠排第一（分數壓到最低）
+  if (custom) {
+    const a = analyzeShape(custom.frets);
+    if (a) out.push({ ...a, source: 'custom', score: -1000 });
+  }
 
   // 1. 開放和弦表
   const key = rootPitch + '|' + c.quality + '|' + (c.bass ? noteToPitch(c.bass) : '');
@@ -306,7 +318,7 @@ export function generateShapes(chordStr, opts = {}) {
     .sort((a, b) => a.score - b.score)
     .slice(0, maxResults);
 
-  CACHE.set(cacheKey, result);
+  if (!custom) CACHE.set(cacheKey, result);
   return result;
 }
 
