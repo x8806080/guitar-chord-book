@@ -159,3 +159,67 @@ test('行範圍與標記偵測', () => {
   assert.deepEqual(tagAt('a[C]b', 2), { start: 1, end: 4 });
   assert.equal(tagAt('abc', 1), null);
 });
+
+test('★★ 拖曳：搬到任意位置', async () => {
+  const { moveChordTo } = await import('../src/lib/chordedit.js');
+  const src = '[C]Twinkle, [F]little';
+  const p = chordAt(src, 0);
+
+  // 用 indexOf 算目標位置，不要硬編數字（硬編一定會數錯）
+  const r = moveChordTo(src, p.chordStart, p.chordEnd, src.indexOf('little'));
+  assert.equal(r.source, 'Twinkle, [F][C]little', r.source);
+  assert.equal(r.source.slice(r.start, r.end), '[C]', '回傳座標要對得上');
+
+  // 拖到單字中間也可以
+  const r2 = moveChordTo(src, p.chordStart, p.chordEnd, src.indexOf('ittle'));
+  assert.equal(r2.source, 'Twinkle, [F]l[C]ittle', r2.source);
+});
+
+test('★★ 拖曳：往前搬', async () => {
+  const { moveChordTo } = await import('../src/lib/chordedit.js');
+  const src = 'Twinkle, [F]little';
+  const p = chordAt(src, 0);
+  assert.equal(moveChordTo(src, p.chordStart, p.chordEnd, src.indexOf('nkle')).source, 'Twi[F]nkle, little');
+});
+
+test('★★ 拖曳：允許跨行（拖曳是明確意圖，不像方向鍵容易誤觸）', async () => {
+  const { moveChordTo } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc\ndef';
+  const p = chordAt(src, 0);
+  const r = moveChordTo(src, p.chordStart, p.chordEnd, src.indexOf('ef')); // 第二行的 e
+  assert.equal(r.moved, true);
+  assert.equal(r.source, 'abc\nd[C]ef', r.source);
+});
+
+test('★★ 拖曳：不可插進另一個標記中間', async () => {
+  const { moveChordTo } = await import('../src/lib/chordedit.js');
+  const src = 'a[C]b[G]c';
+  const p = chordAt(src, 0); // [C] at 1..4
+  // 目標落在 [G] 中間（原座標 6，也就是 [G] 的 G 那一格）
+  const r = moveChordTo(src, p.chordStart, p.chordEnd, 6);
+  assert.ok(!r.source.includes('[['), r.source);
+  assert.ok(!r.source.includes(']]'), r.source);
+  assert.equal(r.source.replace(/\[[^\]]*\]/g, ''), 'abc', '歌詞不可被動到');
+});
+
+test('★ 拖回原地 = 沒動', async () => {
+  const { moveChordTo } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc';
+  const p = chordAt(src, 0);
+  const r = moveChordTo(src, p.chordStart, p.chordEnd, 1);
+  assert.equal(r.moved, false);
+  assert.equal(r.source, src);
+});
+
+test('★★ 拖到任何位置都不可弄丟和弦或動到歌詞', async () => {
+  const { moveChordTo } = await import('../src/lib/chordedit.js');
+  const base = '[C]Twinkle, [F]little [G]star';
+  for (let target = 0; target <= base.length; target++) {
+    const p = chordAt(base, 1); // 搬 [F]
+    const r = moveChordTo(base, p.chordStart, p.chordEnd, target);
+    assert.equal(r.source.replace(/\[[^\]]*\]/g, ''), 'Twinkle, little star', `拖到 ${target} 動到歌詞：${r.source}`);
+    const chords = [...r.source.matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]).sort();
+    assert.deepEqual(chords, ['C', 'F', 'G'], `拖到 ${target} 弄丟和弦：${r.source}`);
+    assert.ok(!r.source.includes('[['), `拖到 ${target} 產生壞標記：${r.source}`);
+  }
+});

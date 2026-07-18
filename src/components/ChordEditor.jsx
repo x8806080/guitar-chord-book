@@ -2,113 +2,128 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 
 /**
- * 和弦內嵌編輯器（點樂譜上的和弦後跳出）
+ * 和弦就地編輯（輸入框直接長在和弦原本的位置上，不彈窗）
  *
- * 幾個刻意的取捨：
- *  - 用「左移／右移」而不是拖曳。拖曳在手機上很難精準，而且練琴時常單手操作；
- *    按鈕點一下移一個字，反而更快也更準。
- *  - 輸入框自動全選：多數情況是整個換掉，不是改一個字母。
- *  - Enter 存、Esc 取消，跟所有編輯器一致。
+ * 鍵盤行為的一致心智模型：**全選 = 操作和弦，非全選 = 編輯文字**
+ *   剛點開時是全選 → ← → 搬和弦、Del/Backspace 刪和弦
+ *   一開始打字就不是全選 → 方向鍵移游標、Del 刪字元（標準行為）
+ *   想回到操作模式：Ctrl+A
  *
- * 方向鍵的衝突處理：
- *   在輸入框裡，方向鍵本來是移動游標。硬搶過來會讓人沒辦法編輯文字。
- *   Alt+方向鍵不能用 —— Chrome 的 Alt+← 是「返回上一頁」，會直接離開網站。
- *   所以改看「選取狀態」：
- *     剛點開和弦時是全選 → 此時按方向鍵幾乎都是想搬和弦，就搬。
- *     一旦開始打字就不再是全選 → 方向鍵回歸標準的游標移動。
- *   想搬完再回到移動模式？Ctrl+A 全選即可。
+ * 為什麼不用 Alt+方向鍵：Chrome 的 Alt+← 是「返回上一頁」，會直接離開網站。
+ *
+ * 下方那排裸圖示不是給桌機的 —— 手機沒有實體方向鍵和 Del 鍵，
+ * 沒有它們，手機就完全無法搬移和刪除。
  */
-export default function ChordEditor({ value, onCommit, onMove, onDelete, onClose, hint }) {
-  const [text, setText] = useState(value);
+export default function ChordEditor({ value, onCommit, onMove, onDelete, onClose, hint, canMove = true }) {
+  const [text, setText] = useState(value ?? '');
   const ref = useRef(null);
+  const cancelled = useRef(false);
 
-  useEffect(() => {
-    setText(value);
-  }, [value]);
+  useEffect(() => setText(value ?? ''), [value]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.focus();
-    el.select();
+    el.select(); // 進來就是全選 = 操作模式
   }, []);
 
   const commit = () => {
     const t = text.trim();
-    if (t !== value) onCommit(t);
+    if (t !== (value ?? '').trim()) onCommit(t);
     else onClose();
   };
 
-  return (
-    <div
-      className="absolute left-0 top-full z-30 mt-1 flex flex-col gap-1 rounded-lg border border-line p-1.5 shadow-lg"
-      style={{ background: 'var(--surface)' }}
-      onClick={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-label="編輯和弦"
-    >
-      <div className="flex items-center gap-1">
-        <input
-          ref={ref}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation(); // 不要讓空白鍵去觸發自動捲動、+ - 去觸發轉調
-            if (e.key === 'Enter') { commit(); return; }
-            if (e.key === 'Escape') { onClose(); return; }
+  /** 目前是不是「操作模式」：全選，或內容是空的 */
+  const inOperateMode = () => {
+    const el = ref.current;
+    if (!el) return false;
+    if (el.value.length === 0) return true;
+    return el.selectionStart === 0 && el.selectionEnd === el.value.length;
+  };
 
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-              const el = e.currentTarget;
-              const allSelected =
-                el.value.length > 0 && el.selectionStart === 0 && el.selectionEnd === el.value.length;
-              if (!allSelected) return; // 使用者正在編輯文字，讓游標正常移動
-              e.preventDefault();
-              onMove(e.key === 'ArrowRight' ? 1 : -1);
-            }
-          }}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          aria-label="和弦名稱"
-          className="w-[5.5rem] rounded-md border border-line bg-bg px-2 py-1 font-chord text-[13px] font-bold outline-none focus:border-accent"
-          style={{ color: 'var(--chord)' }}
-        />
+  // 點下方圖示時不能讓輸入框失焦，否則 blur 會先把編輯結束掉
+  const keepFocus = (e) => e.preventDefault();
+
+  const icon = 'inline-flex h-6 w-6 items-center justify-center rounded text-muted hover:text-accent';
+
+  return (
+    <span
+      className="relative inline-flex"
+      // 樂譜最外層有「點空白處關閉編輯框」的 handler。
+      // 不擋住冒泡的話，點 ← → ✕ 也會被當成點空白處，編輯框會自己關掉。
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <input
+        ref={ref}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          if (cancelled.current) return; // Esc 取消時不要順手存下去
+          // 只在值真的改了才存，而且刻意「不」呼叫 onClose。
+          // 因為和弦被搬走時，這個輸入框會在舊位置被卸載，卸載會觸發 blur ——
+          // 若在這裡 onClose，等於編輯框自己把自己關掉，使用者就沒辦法連續搬移。
+          // 想關閉編輯框的路徑另有其人：Enter、Esc、點樂譜空白處。
+          const t = text.trim();
+          if (t !== (value ?? '').trim()) onCommit(t);
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation(); // 別讓空白鍵觸發自動捲動、+ - 觸發轉調
+          if (e.key === 'Enter') { commit(); return; }
+          if (e.key === 'Escape') { cancelled.current = true; onClose(); return; }
+
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            if (!canMove || !inOperateMode()) return; // 正在編輯文字 → 游標照常移動
+            e.preventDefault();
+            onMove(e.key === 'ArrowRight' ? 1 : -1);
+            return;
+          }
+
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (!inOperateMode()) return; // 正在編輯文字 → 照常刪字元
+            e.preventDefault();
+            onDelete();
+          }
+        }}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        autoComplete="off"
+        aria-label="和弦名稱"
+        placeholder="和弦"
+        // 寬度跟著內容長，排版才不會因為進入編輯而大幅跳動
+        style={{ width: `${Math.max(2.5, text.length + 0.5)}ch`, color: 'var(--chord)' }}
+        className="sheet-chord font-chord rounded-[3px] border-0 bg-transparent p-0 font-bold outline-none ring-1 ring-[var(--accent)] placeholder:font-normal placeholder:text-muted placeholder:opacity-50"
+      />
+
+      {/* 手機沒有方向鍵與 Del，這排是它們唯一的操作方式 */}
+      <span className="absolute left-0 top-full z-30 flex items-center gap-0.5 pt-0.5">
+        {canMove && (
+          <>
+            <button onMouseDown={keepFocus} onClick={() => onMove(-1)} className={icon} title="往左移一個字" aria-label="往左移一個字">
+              <ArrowLeft size={13} />
+            </button>
+            <button onMouseDown={keepFocus} onClick={() => onMove(1)} className={icon} title="往右移一個字" aria-label="往右移一個字">
+              <ArrowRight size={13} />
+            </button>
+          </>
+        )}
         <button
-          onClick={() => onMove(-1)}
-          title="往左移一個字"
-          aria-label="往左移一個字"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted hover:border-accent hover:text-accent"
-        >
-          <ArrowLeft size={13} />
-        </button>
-        <button
-          onClick={() => onMove(1)}
-          title="往右移一個字"
-          aria-label="往右移一個字"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted hover:border-accent hover:text-accent"
-        >
-          <ArrowRight size={13} />
-        </button>
-        <button
+          onMouseDown={keepFocus}
           onClick={onDelete}
-          title="刪除這個和弦"
-          aria-label="刪除這個和弦"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted hover:border-[var(--danger)] hover:text-[var(--danger)]"
+          className={`${icon} hover:text-[var(--danger)]`}
+          title={canMove ? '刪除這個和弦' : '取消'}
+          aria-label={canMove ? '刪除這個和弦' : '取消'}
         >
           <X size={13} />
         </button>
-      </div>
-
-      {/* 轉調中要講清楚會寫回什麼，不然使用者會不知道原調被改成什麼 */}
-      <p className="px-0.5 font-chord text-[10px] text-muted">
         {hint && (
-          <>
-            <span style={{ color: 'var(--chord)' }}>{hint}</span>
-            {' · '}
-          </>
+          <span className="whitespace-nowrap pl-1 font-chord text-[10px]" style={{ color: 'var(--chord)' }}>
+            {hint}
+          </span>
         )}
-        ← → 移動
-      </p>
-    </div>
+      </span>
+    </span>
   );
 }

@@ -83,6 +83,41 @@ export function moveChord(source, start, end, dir) {
   };
 }
 
+/**
+ * 把和弦搬到指定的字元位置（拖曳用）
+ *
+ * 跟 moveChord 的差別：那個是「相對移動一格」，這個是「絕對搬到某處」。
+ * 拖曳是明確的意圖表達，所以允許跨行 —— 使用者把和弦拖到別行歌詞上，
+ * 那就是他要的。方向鍵不允許跨行是因為那容易誤觸。
+ *
+ * @returns {{source, start, end, moved}}
+ */
+export function moveChordTo(source, start, end, targetPos) {
+  if (targetPos >= start && targetPos <= end) {
+    return { source, start, end, moved: false }; // 拖回自己身上 = 沒動
+  }
+
+  const tag = source.slice(start, end);
+  const rest = source.slice(0, start) + source.slice(end);
+
+  // 目標在標記後方的話，座標要扣掉被拿走的標記長度
+  let pos = targetPos > end ? targetPos - (end - start) : targetPos;
+  pos = Math.max(0, Math.min(rest.length, pos));
+
+  // 不可插進另一個標記中間，否則會產生 [[C]G] 這種壞掉的東西
+  const hit = tagAt(rest, pos);
+  if (hit && pos > hit.start && pos < hit.end) pos = hit.end;
+
+  if (pos === start) return { source, start, end, moved: false };
+
+  return {
+    source: rest.slice(0, pos) + tag + rest.slice(pos),
+    start: pos,
+    end: pos + tag.length,
+    moved: true,
+  };
+}
+
 /** 在指定位置插入新和弦 */
 export function insertChord(source, pos, chord = 'C') {
   const c = String(chord ?? '').trim() || 'C';

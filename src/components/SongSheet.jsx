@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { pairsToUnits, collectChords } from '../lib/chordpro.js';
 import { transposeChordToken, transposeChord, isChord } from '../lib/chords.js';
 import { ChordCard } from './ChordDiagram.jsx';
 import ChordEditor from './ChordEditor.jsx';
-import { replaceChord, removeChord, moveChord, insertChord, toSourceChord } from '../lib/chordedit.js';
+import { replaceChord, removeChord, moveChord, moveChordTo, insertChord, toSourceChord } from '../lib/chordedit.js';
 import VideoPlayer from './VideoPlayer.jsx';
 import { parseYouTube } from '../lib/youtube.js';
 
@@ -13,26 +13,75 @@ import { parseYouTube } from '../lib/youtube.js';
  * 內含上排和弦 + 下排歌詞。換行只發生在 item 之間 →
  * 任何寬度下和弦都精準壓在該字正上方，不會跑版。
  */
-function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit }) {
+function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag, dropPos }) {
   const units = useMemo(() => pairsToUnits(pairs), [pairs]);
-  const hasChord = units.some((u) => u.chord);
+  // 解鎖時即使整行沒和弦也要留出和弦列，否則沒地方按「＋」加第一個和弦
+  const showRow = units.some((u) => u.chord) || editable;
 
   return (
     <div className="sheet-line">
       {units.map((u, i) => {
         const shown = u.chord ? transposeChordToken(u.chord, semitones, useFlat) : null;
-        const isSel = editable && sel && u.chordStart != null && sel.start === u.chordStart;
+        const editing = editable && sel?.mode === 'edit' && u.chordStart != null && sel.start === u.chordStart;
+        const inserting = editable && sel?.mode === 'insert' && sel.pos === u.textStart;
+        const isDragging = drag?.start === u.chordStart;
+        const isDropTarget = dropPos != null && dropPos === u.textStart;
 
         return (
-          <span className={`sheet-unit ${isSel ? 'relative' : ''}`} key={i}>
-            {hasChord && (
-              shown != null ? (
+          <span
+            className="sheet-unit relative"
+            // 不可以用 index 當 key：搬動和弦會改變 units 的數量與順序
+            // （"little" 會被切成 "l" + "ittle"），index 一錯位，
+            // React 就會把編輯中的輸入框接到別的字上，畫面直接消失。
+            key={`${u.textStart}:${u.chordStart ?? ''}`}
+            data-pos={u.textStart}
+          >
+            {/* 拖曳時的落點指示線 */}
+            {isDropTarget && (
+              <span
+                className="pointer-events-none absolute inset-y-0 left-0 w-[2px] rounded-full"
+                style={{ background: 'var(--accent)' }}
+              />
+            )}
+            {showRow &&
+              (editing ? (
+                <ChordEditor
+                  value={sel.shown}
+                  hint={sel.hint}
+                  onCommit={(v) => onEdit({ type: 'replace', start: sel.start, end: sel.end, value: v })}
+                  onMove={(d) => onEdit({ type: 'move', start: sel.start, end: sel.end, dir: d })}
+                  onDelete={() => onEdit({ type: 'delete', start: sel.start, end: sel.end })}
+                  onClose={() => onSelect(null)}
+                />
+              ) : inserting ? (
+                <ChordEditor
+                  value=""
+                  canMove={false}
+                  onCommit={(v) => onEdit({ type: 'insert', pos: sel.pos, value: v })}
+                  onMove={() => {}}
+                  onDelete={() => onSelect(null)}
+                  onClose={() => onSelect(null)}
+                />
+              ) : shown != null ? (
                 editable ? (
                   <button
-                    className="sheet-chord font-chord rounded-[3px] text-left hover:bg-surface2"
-                    style={{ outline: isSel ? '1.5px solid var(--accent)' : undefined }}
-                    onClick={(e) => { e.stopPropagation(); onSelect({ start: u.chordStart, end: u.chordEnd, shown }); }}
-                    title="點一下編輯"
+                    className="sheet-chord font-chord cursor-grab rounded-[3px] text-left hover:bg-surface2 active:cursor-grabbing"
+                    style={{
+                      touchAction: 'pan-y', // 垂直捲動留給頁面，水平手勢才是拖曳
+                      opacity: isDragging ? 0.35 : undefined,
+                    }}
+                    onPointerDown={(e) => onEdit({
+                      type: 'dragStart', e,
+                      start: u.chordStart, end: u.chordEnd, shown,
+                    })}
+                    onKeyDown={(e) => {
+                      // 改用 pointerup 判定點擊後，鍵盤使用者要另外接
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelect({ mode: 'edit', start: u.chordStart, end: u.chordEnd, shown });
+                      }
+                    }}
+                    title="點一下編輯，拖曳可移動"
                   >
                     {shown}
                   </button>
@@ -40,29 +89,17 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit }) {
                   <span className="sheet-chord font-chord">{shown}</span>
                 )
               ) : editable ? (
-                // 空位也可點：在這個字正上方插入新和弦
                 <button
                   className="sheet-chord font-chord rounded-[3px] text-left opacity-25 hover:bg-surface2 hover:opacity-100"
-                  onClick={(e) => { e.stopPropagation(); onEdit({ type: 'insert', pos: u.textStart }); }}
+                  onClick={(e) => { e.stopPropagation(); onSelect({ mode: 'insert', pos: u.textStart }); }}
                   title="在這個字上方加和弦"
                 >
                   ＋
                 </button>
               ) : (
                 <span className="sheet-chord font-chord">{'\u00A0'}</span>
-              )
-            )}
+              ))}
             <span className="sheet-lyric">{u.text || '\u00A0'}</span>
-            {isSel && (
-              <ChordEditor
-                value={sel.shown}
-                hint={sel.hint}
-                onCommit={(v) => onEdit({ type: 'replace', start: sel.start, end: sel.end, value: v })}
-                onMove={(d) => onEdit({ type: 'move', start: sel.start, end: sel.end, dir: d })}
-                onDelete={() => onEdit({ type: 'delete', start: sel.start, end: sel.end })}
-                onClose={() => onSelect(null)}
-              />
-            )}
           </span>
         );
       })}
@@ -78,18 +115,77 @@ export default function SongSheet({
 
   /* ---------- 直接在樂譜上編輯和弦 ---------- */
   const [sel, setSel] = useState(null);
+  const [drag, setDrag] = useState(null);
+  const [dropPos, setDropPos] = useState(null);
+  const dragRef = useRef(null);
+  const dropRef = useRef(null);
+  dropRef.current = dropPos;
 
   // 鎖上時要把選取狀態清掉，不然解鎖回來還留著上次的編輯框
   useEffect(() => { if (!editable) setSel(null); }, [editable]);
 
   const select = (v) => {
     if (!v) return setSel(null);
+    if (v.mode === 'insert') return setSel(v);
     // 轉調中要先告訴使用者「原調會存成什麼」，不然他不知道自己改到了什麼
     const src = toSourceChord(v.shown, semitones, useFlat);
     setSel({ ...v, hint: semitones && src !== v.shown ? `原調存成 ${src}` : null });
   };
 
+  /**
+   * 拖曳搬和弦。
+   * 難點：同一個按鈕既要能「點開編輯」又要能「拖著走」。
+   * 用位移距離區分 —— 超過 6px 才算拖曳，否則放開時視為點擊。
+   * 不這樣做的話，手指一碰到和弦就變成拖曳，永遠點不開編輯框。
+   */
+  const startDrag = (op) => {
+    const e = op.e;
+    if (e.button != null && e.button !== 0) return; // 只認左鍵
+    const d = { start: op.start, end: op.end, shown: op.shown, x: e.clientX, y: e.clientY, moved: false };
+    dragRef.current = d;
+    setDrag(d);
+    setSel(null);
+
+    const onMove = (ev) => {
+      const cur = dragRef.current;
+      if (!cur) return;
+      if (!cur.moved && Math.hypot(ev.clientX - cur.x, ev.clientY - cur.y) < 6) return;
+      cur.moved = true;
+      // 找游標/手指底下是哪個字
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const t = el?.closest?.('[data-pos]');
+      setDropPos(t ? Number(t.dataset.pos) : null);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      const cur = dragRef.current;
+      const target = dropRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      setDropPos(null);
+      if (!cur) return;
+
+      if (!cur.moved) {
+        // 沒移動 = 點擊 → 開編輯框
+        select({ mode: 'edit', start: cur.start, end: cur.end, shown: cur.shown });
+        return;
+      }
+      if (target == null) return; // 拖到空白處 = 放棄
+      const r = moveChordTo(ast.source ?? '', cur.start, cur.end, target);
+      if (r.moved) onSourceChange?.(r.source);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
+
   const handleEdit = (op) => {
+    if (op.type === 'dragStart') return startDrag(op);
+
     // 一律以 ast.source（正規化過的）為基準，座標才對得上
     const src = ast.source ?? '';
     let r;
@@ -107,11 +203,14 @@ export default function SongSheet({
         setSel((p) => (p ? { ...p, start: r.start, end: r.end } : null)); // 跟著和弦走
         return;
       }
-      case 'insert':
-        r = insertChord(src, op.pos, toSourceChord('C', semitones, useFlat));
+      case 'insert': {
+        const v = String(op.value ?? '').trim();
+        if (!v) { setSel(null); return; } // 沒輸入就取消，不要塞一個沒人要的和弦
+        r = insertChord(src, op.pos, toSourceChord(v, semitones, useFlat));
         onSourceChange?.(r.source);
         setSel(null);
         return;
+      }
       default:
         return;
     }
@@ -224,6 +323,8 @@ export default function SongSheet({
                   sel={sel}
                   onSelect={select}
                   onEdit={handleEdit}
+                  drag={drag}
+                  dropPos={dropPos}
                 />
               ))}
             </section>
