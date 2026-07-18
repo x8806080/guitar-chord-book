@@ -3,7 +3,8 @@ import { pairsToUnits, collectChords } from '../lib/chordpro.js';
 import { transposeChordToken, transposeChord, isChord } from '../lib/chords.js';
 import { ChordCard } from './ChordDiagram.jsx';
 import ChordEditor from './ChordEditor.jsx';
-import { replaceChord, removeChord, moveChord, moveChordTo, insertChord, toSourceChord } from '../lib/chordedit.js';
+import LyricEditor from './LyricEditor.jsx';
+import { replaceChord, removeChord, moveChord, moveChordTo, insertChord, replaceText, toSourceChord } from '../lib/chordedit.js';
 import VideoPlayer from './VideoPlayer.jsx';
 import { parseYouTube } from '../lib/youtube.js';
 
@@ -24,6 +25,7 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag
         const shown = u.chord ? transposeChordToken(u.chord, semitones, useFlat) : null;
         const editing = editable && sel?.mode === 'edit' && u.chordStart != null && sel.start === u.chordStart;
         const inserting = editable && sel?.mode === 'insert' && sel.pos === u.textStart;
+        const editingLyric = editable && sel?.mode === 'lyric' && sel.start === u.textStart;
         const isDragging = drag?.start === u.chordStart;
         const isDropTarget = dropPos != null && dropPos === u.textStart;
 
@@ -90,7 +92,7 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag
                 )
               ) : editable ? (
                 <button
-                  className="sheet-chord font-chord rounded-[3px] text-left opacity-25 hover:bg-surface2 hover:opacity-100"
+                  className="sheet-chord font-chord rounded-[3px] px-1 text-left opacity-40 hover:bg-surface2 hover:opacity-100"
                   onClick={(e) => { e.stopPropagation(); onSelect({ mode: 'insert', pos: u.textStart }); }}
                   title="在這個字上方加和弦"
                 >
@@ -99,7 +101,23 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag
               ) : (
                 <span className="sheet-chord font-chord">{'\u00A0'}</span>
               ))}
-            <span className="sheet-lyric">{u.text || '\u00A0'}</span>
+            {editingLyric ? (
+              <LyricEditor
+                value={u.text}
+                onCommit={(v) => onEdit({ type: 'lyric', start: u.textStart, end: u.textStart + u.text.length, value: v })}
+                onClose={() => onSelect(null)}
+              />
+            ) : editable && u.text.trim() ? (
+              <button
+                className="sheet-lyric rounded-[3px] text-left hover:bg-surface2"
+                onClick={(e) => { e.stopPropagation(); onSelect({ mode: 'lyric', start: u.textStart, lyricEnd: u.textStart + u.text.length }); }}
+                title="點一下編輯歌詞"
+              >
+                {u.text}
+              </button>
+            ) : (
+              <span className="sheet-lyric">{u.text || '\u00A0'}</span>
+            )}
           </span>
         );
       })}
@@ -109,7 +127,7 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag
 
 export default function SongSheet({
   ast, semitones = 0, useFlat = false, fontSize = 18, showChords = true,
-  editable = false, onSourceChange,
+  editable = false, onSourceChange, onHighlight,
 }) {
   const { meta, blocks } = ast;
 
@@ -124,9 +142,18 @@ export default function SongSheet({
   // 鎖上時要把選取狀態清掉，不然解鎖回來還留著上次的編輯框
   useEffect(() => { if (!editable) setSel(null); }, [editable]);
 
+  // 選到什麼就回報原始碼的哪一段，讓左邊編輯器反色並捲過去
+  useEffect(() => {
+    if (!onHighlight) return;
+    if (!sel) return onHighlight(null);
+    if (sel.mode === 'edit') return onHighlight({ start: sel.start, end: sel.end });
+    if (sel.mode === 'lyric') return onHighlight({ start: sel.start, end: sel.lyricEnd ?? sel.start });
+    if (sel.mode === 'insert') return onHighlight({ start: sel.pos, end: sel.pos });
+  }, [sel, onHighlight]);
+
   const select = (v) => {
     if (!v) return setSel(null);
-    if (v.mode === 'insert') return setSel(v);
+    if (v.mode === 'insert' || v.mode === 'lyric') return setSel(v);
     // 轉調中要先告訴使用者「原調會存成什麼」，不然他不知道自己改到了什麼
     const src = toSourceChord(v.shown, semitones, useFlat);
     setSel({ ...v, hint: semitones && src !== v.shown ? `原調存成 ${src}` : null });
@@ -195,6 +222,9 @@ export default function SongSheet({
         break;
       case 'delete':
         r = removeChord(src, op.start, op.end);
+        break;
+      case 'lyric':
+        r = replaceText(src, op.start, op.end, op.value);
         break;
       case 'move': {
         r = moveChord(src, op.start, op.end, op.dir);

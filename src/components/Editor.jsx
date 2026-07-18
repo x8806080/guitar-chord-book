@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const SNIPPETS = [
   { label: '和弦', insert: '[C]' },
@@ -13,9 +13,33 @@ const SNIPPETS = [
  * ChordPro 編輯器
  * - 支援選取文字後直接包上 [ ]（快速標和弦）
  * - Tab 鍵插入兩格空白而非跳離欄位
+ * - 在右邊樂譜上點和弦/歌詞時，這裡會反色標出對應的原始碼並自動捲過去
+ *
+ * 反色為什麼要用疊圖層：textarea 沒辦法把內容的某一段上色，
+ * 而 setSelectionRange 的選取在 textarea 沒有 focus 時是看不見的 ——
+ * 但我們不能搶 focus，那會讓樂譜上的輸入框失焦、編輯直接中斷。
+ * 所以在 textarea 底下疊一層一模一樣排版的 div，由它負責畫顏色。
  */
-export default function Editor({ value, onChange }) {
+export default function Editor({ value, onChange, highlight }) {
   const ref = useRef(null);
+  const hlRef = useRef(null);
+  const markRef = useRef(null);
+
+  // 兩層的字型、行高、padding、換行規則必須完全一致，否則反色會偏位
+  const LAYOUT = 'whitespace-pre-wrap break-words p-4 font-chord text-[13px] leading-[1.75]';
+
+  // 反色範圍變了就捲到看得見的地方（連同 textarea 一起捲，兩層才不會脫節）
+  useEffect(() => {
+    const m = markRef.current;
+    const hl = hlRef.current;
+    const ta = ref.current;
+    if (!m || !hl || !ta) return;
+    m.scrollIntoView({ block: 'nearest' });
+    ta.scrollTop = hl.scrollTop;
+  }, [highlight?.start, highlight?.end]);
+
+  const hasMark =
+    highlight && Number.isFinite(highlight.start) && highlight.end > highlight.start;
 
   const insertAt = (text) => {
     const el = ref.current;
@@ -59,15 +83,42 @@ export default function Editor({ value, onChange }) {
         <span className="ml-auto text-[11px] text-muted">選取文字按 <kbd className="font-chord">[</kbd> 可快速標和弦</span>
       </div>
 
-      <textarea
-        ref={ref}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        spellCheck={false}
-        placeholder={'{title: 歌名}\n{artist: 演唱者}\n\n[C]Twinkle, twinkle, [F]little [C]star'}
-        className="min-h-0 flex-1 resize-none bg-transparent p-4 font-chord text-[13px] leading-[1.75] text-ink outline-none placeholder:text-muted"
-      />
+      <div className="relative min-h-0 flex-1">
+        {/* 底層：只負責畫反色，不接任何互動 */}
+        <div
+          ref={hlRef}
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-0 overflow-auto text-transparent ${LAYOUT}`}
+        >
+          {hasMark ? (
+            <>
+              {value.slice(0, highlight.start)}
+              <mark
+                ref={markRef}
+                className="rounded-[2px] text-transparent"
+                style={{ background: 'var(--accent)', opacity: 0.28 }}
+              >
+                {value.slice(highlight.start, highlight.end) || ' '}
+              </mark>
+              {value.slice(highlight.end)}
+            </>
+          ) : (
+            value
+          )}
+          {'\n'}
+        </div>
+
+        <textarea
+          ref={ref}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onScroll={(e) => { if (hlRef.current) hlRef.current.scrollTop = e.currentTarget.scrollTop; }}
+          spellCheck={false}
+          placeholder={'{title: 歌名}\n{artist: 演唱者}\n\n[C]歌詞寫在這裡'}
+          className={`absolute inset-0 h-full w-full resize-none overflow-auto bg-transparent text-ink outline-none placeholder:text-muted ${LAYOUT}`}
+        />
+      </div>
     </div>
   );
 }

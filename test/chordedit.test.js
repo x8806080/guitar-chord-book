@@ -223,3 +223,49 @@ test('★★ 拖到任何位置都不可弄丟和弦或動到歌詞', async () =
     assert.ok(!r.source.includes('[['), `拖到 ${target} 產生壞標記：${r.source}`);
   }
 });
+
+test('★★ 編輯歌詞只換指定範圍，不可碰到和弦標記', async () => {
+  const { replaceText } = await import('../src/lib/chordedit.js');
+  const src = '[C]Twinkle, [F]little';
+  const start = src.indexOf('Twinkle,');
+  const r = replaceText(src, start, start + 'Twinkle,'.length, 'Sparkle,');
+  assert.equal(r.source, '[C]Sparkle, [F]little');
+  assert.equal(r.source.slice(r.start, r.end), 'Sparkle,');
+});
+
+test('★★ 歌詞裡打方括號要轉全形，否則會被當成和弦標記', async () => {
+  const { replaceText } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc';
+  const r = replaceText(src, 3, 6, 'a[G]b');
+  assert.ok(!r.source.includes('[G]'), '不可產生假和弦：' + r.source);
+  assert.equal(r.source, '[C]a［G］b');
+
+  // 確認解析後仍只有原本那一個和弦
+  const chords = [];
+  for (const b of parseChordPro(r.source).blocks)
+    for (const l of b.lines) for (const p of l.pairs ?? []) if (p.chord) chords.push(p.chord);
+  assert.deepEqual(chords, ['C']);
+});
+
+test('★★ 歌詞裡貼上換行要吃掉，否則整行會被拆開、和弦全跑掉', async () => {
+  const { replaceText } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc [F]def';
+  const r = replaceText(src, 3, 6, 'a\nb\r\nc');
+  assert.ok(!r.source.includes('\n'), r.source);
+  assert.equal(r.source, '[C]a b c [F]def');
+});
+
+test('★ 編輯歌詞後和弦數量不變', async () => {
+  const { replaceText } = await import('../src/lib/chordedit.js');
+  const src = '[C]Twinkle, [F]little [G]star';
+  const start = src.indexOf('little');
+  const r = replaceText(src, start, start + 6, '很長很長的中文歌詞');
+  const chords = [...r.source.matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]);
+  assert.deepEqual(chords, ['C', 'F', 'G']);
+});
+
+test('清空歌詞不會爆', async () => {
+  const { replaceText } = await import('../src/lib/chordedit.js');
+  assert.equal(replaceText('[C]abc', 3, 6, '').source, '[C]');
+  assert.equal(replaceText('[C]abc', 3, 6, null).source, '[C]');
+});

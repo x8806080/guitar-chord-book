@@ -56,6 +56,7 @@ const tap = async (el) => {
 };
 
 let source = '[C]Twinkle, [F]little [C]star';
+let lastHighlight = null;
 const root = createRoot(document.getElementById('root'));
 
 // 用真的 state 容器包住 —— 真實 App 裡 onSourceChange 會觸發父層 re-render 並傳入新 ast。
@@ -67,7 +68,7 @@ function Harness({ initial, ...props }) {
   source = src;
   return React.createElement(SongSheet, {
     ast: parseChordPro(src), semitones: 0, useFlat: false, fontSize: 18, showChords: false,
-    editable: true, onSourceChange: setSrc, ...props,
+    editable: true, onSourceChange: setSrc, onHighlight: (h) => { lastHighlight = h; }, ...props,
   });
 }
 
@@ -236,6 +237,53 @@ const reset = async (src, over = {}) => {
   await pointerUp(102, 51);
   ok('★★ 微小位移視為點擊，要開編輯框而不是搬和弦',
      Boolean(editorInput()) && source === '[C]Twinkle, [F]little [C]star', source);
+
+  // ---- 歌詞就地編輯 ----
+  await reset('[C]Twinkle, [F]little [C]star');
+  const lyricBtn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'little');
+  ok('★ 解鎖後歌詞可點', Boolean(lyricBtn));
+  await click(lyricBtn);
+  const lin = document.querySelector('input[aria-label="歌詞"]');
+  ok('★★ 點歌詞就地變輸入框', Boolean(lin), '找不到歌詞輸入框');
+  ok('歌詞輸入框帶入原文字', lin?.value === 'little', `實際 "${lin?.value}"`);
+
+  await type(lin, 'shining');
+  await key(lin, 'Enter');
+  ok('★★ 改歌詞不可動到和弦', source === '[C]Twinkle, [F]shining [C]star', source);
+
+  // 空白不該可編輯（點了沒意義）
+  await reset('[C]Twinkle, [F]little [C]star');
+  const spaceBtns = [...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === '' && b.className.includes('sheet-lyric'));
+  ok('★ 純空白不做成可點的歌詞', spaceBtns.length === 0, `有 ${spaceBtns.length} 個`);
+
+  // 歌詞裡打方括號會被轉全形，不可產生假和弦
+  await reset('[C]abc [F]def');
+  await click([...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'abc'));
+  const lin2 = document.querySelector('input[aria-label="歌詞"]');
+  await type(lin2, 'a[G]b');
+  await key(lin2, 'Enter');
+  ok('★★ 歌詞裡打方括號不可變成假和弦', !source.includes('[G]'), source);
+
+  // ---- 編輯器同步反色 ----
+  await reset('[C]Twinkle, [F]little [C]star');
+  lastHighlight = null;
+  await tap(chordBtn('F'));
+  ok('★★ 點和弦要回報原始碼範圍給編輯器',
+     lastHighlight && source.slice(lastHighlight.start, lastHighlight.end) === '[F]',
+     JSON.stringify(lastHighlight));
+
+  await reset('[C]Twinkle, [F]little [C]star');
+  lastHighlight = null;
+  await click([...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'little'));
+  ok('★★ 點歌詞要回報歌詞的原始碼範圍',
+     lastHighlight && source.slice(lastHighlight.start, lastHighlight.end) === 'little',
+     JSON.stringify(lastHighlight));
+
+  await reset('[C]Twinkle, [F]little [C]star');
+  await tap(chordBtn('F'));
+  lastHighlight = 'unset';
+  await act(async () => document.querySelector('article').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+  ok('★ 關閉編輯時要清掉反色', lastHighlight === null, JSON.stringify(lastHighlight));
 
   let pass = 0;
   for (const [c, n, e] of checks) { console.log(`${c ? '✅' : '❌'} ${n}${e ? '  → ' + e : ''}`); if (c) pass++; }

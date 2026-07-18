@@ -28,6 +28,7 @@ export default function App() {
 
   const [syncCfg, setSyncCfg] = useState(db.getSyncConfig);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [highlight, setHighlight] = useState(null); // 樂譜上選到的和弦/歌詞，對應原始碼的範圍
   const [syncState, setSyncState] = useState('idle'); // idle | busy | ok | error | off
   const [prefs, setPrefsState] = useState(db.getPrefs);
   const [mobileView, setMobileView] = useState('sheet'); // list | edit | sheet
@@ -143,7 +144,7 @@ export default function App() {
   const { playing, toggle, stop, backToTop, canScroll } = useAutoScroll(sheetRef, scrollSpeed);
 
   // 換歌就停下來，免得新歌自己捲起來
-  useEffect(() => { stop(); scrollToTop(sheetRef.current, false); }, [activeId, stop]);
+  useEffect(() => { stop(); scrollToTop(sheetRef.current, false); setHighlight(null); }, [activeId, stop]);
 
   // 歌名/歌手跟著 {title:} {artist:} 走，側欄才不會一直顯示「未命名」
   useEffect(() => {
@@ -315,7 +316,7 @@ export default function App() {
           style={{ flex: `0 0 ${editorWidth}%` }}
         >
           {active ? (
-            <Editor value={active.source} onChange={(v) => patchActive({ source: v })} />
+            <Editor value={active.source} onChange={(v) => patchActive({ source: v })} highlight={highlight} />
           ) : (
             <p className="p-6 text-muted">先在左邊選一首歌，或按 ＋ 新增。</p>
           )}
@@ -361,6 +362,7 @@ export default function App() {
                 showChords={prefs.showChords !== false}
                 editable={prefs.sheetEditable === true}
                 onSourceChange={(v) => patchActive({ source: v })}
+                onHighlight={setHighlight}
               />
             ) : (
               <div className="grid h-full place-items-center px-6 text-center text-muted">

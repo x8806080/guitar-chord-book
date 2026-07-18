@@ -125,6 +125,27 @@ export function insertChord(source, pos, chord = 'C') {
   return { source: source.slice(0, pos) + tag + source.slice(pos), start: pos, end: pos + tag.length };
 }
 
+/**
+ * 換掉一段歌詞文字（就地編輯歌詞用）
+ *
+ * 只換指定範圍，不碰其他任何東西 —— 尤其不能碰到 [] 標記。
+ * 使用者若在歌詞裡打了 [ 或 ]，會被轉成全形，否則會被解析成和弦標記，
+ * 整行歌詞就爛掉了。
+ *
+ * @returns {{source:string, start:number, end:number}}
+ */
+export function replaceText(source, start, end, newText) {
+  const safe = String(newText ?? '')
+    .replace(/\[/g, '［')
+    .replace(/\]/g, '］')
+    .replace(/[\r\n]+/g, ' '); // 換行會把一行拆成兩行，和弦全跑掉
+  return {
+    source: source.slice(0, start) + safe + source.slice(end),
+    start,
+    end: start + safe.length,
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * 轉調狀態下的編輯
  * ------------------------------------------------------------------ */
