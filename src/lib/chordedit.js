@@ -126,6 +126,53 @@ export function insertChord(source, pos, chord = 'C') {
 }
 
 /**
+ * 在指定位置插入原始文字（插空格、換行用）。
+ * 純粹的字串插入，不做任何轉義 —— 呼叫端自己保證插入的是安全內容
+ * （這個函式的用途就是插 ' ' 或 '\n' 這種結構字元）。
+ */
+export function insertText(source, pos, str = '') {
+  const p = Math.max(0, Math.min(source.length, pos));
+  return { source: source.slice(0, p) + str + source.slice(p), start: p, end: p + str.length };
+}
+
+/**
+ * 刪掉 pos 左邊的一個字元（歌詞的 Backspace）。
+ * 但如果左邊緊鄰的是和弦標記 []，要整個標記一起看待 —— 不可以只刪掉 ']'，
+ * 那會把標記拆壞（[C 變成沒有結尾的殘骸，後面全被吃進和弦名）。
+ * @returns {{source, start, end, removed:'char'|'chord'|null}}
+ */
+export function deleteBefore(source, pos) {
+  if (pos <= 0) return { source, start: 0, end: 0, removed: null };
+
+  // 左邊是不是一個完整的和弦標記結尾？
+  if (source[pos - 1] === ']') {
+    const open = source.lastIndexOf('[', pos - 1);
+    if (open !== -1 && !source.slice(open + 1, pos - 1).includes('[')) {
+      return { source: source.slice(0, open) + source.slice(pos), start: open, end: open, removed: 'chord' };
+    }
+  }
+  return { source: source.slice(0, pos - 1) + source.slice(pos), start: pos - 1, end: pos - 1, removed: 'char' };
+}
+
+/**
+ * 把 pos 位置斷成兩行（行尾換行鈕）。
+ * pos 通常是某行的結尾；插入 '\n' 即可，後續文字自然變成新的一行。
+ */
+export function breakLine(source, pos) {
+  return insertText(source, pos, '\n');
+}
+
+/**
+ * 合併 pos 所在行與下一行（刪掉那個換行）。
+ * 找 pos 之後的第一個 '\n' 刪掉；沒有下一行就不動。
+ */
+export function joinNextLine(source, pos) {
+  const nl = source.indexOf('\n', pos);
+  if (nl === -1) return { source, start: pos, end: pos, joined: false };
+  return { source: source.slice(0, nl) + source.slice(nl + 1), start: nl, end: nl, joined: true };
+}
+
+/**
  * 換掉一段歌詞文字（就地編輯歌詞用）
  *
  * 只換指定範圍，不碰其他任何東西 —— 尤其不能碰到 [] 標記。

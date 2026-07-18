@@ -269,3 +269,72 @@ test('清空歌詞不會爆', async () => {
   assert.equal(replaceText('[C]abc', 3, 6, '').source, '[C]');
   assert.equal(replaceText('[C]abc', 3, 6, null).source, '[C]');
 });
+
+test('★ 插入文字（空格）', async () => {
+  const { insertText } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc';
+  assert.equal(insertText(src, 4, ' ').source, '[C]a bc');
+  assert.equal(insertText(src, 3, '  ').source, '[C]  abc');
+});
+
+test('★★ Backspace 刪字元', async () => {
+  const { deleteBefore } = await import('../src/lib/chordedit.js');
+  const r = deleteBefore('[C]abc', 5); // 刪 b
+  assert.equal(r.source, '[C]ac');
+  assert.equal(r.removed, 'char');
+});
+
+test('★★ Backspace 碰到和弦標記要整個刪，不可只刪 ]', async () => {
+  const { deleteBefore } = await import('../src/lib/chordedit.js');
+  const r = deleteBefore('ab[C]cd', 5); // 游標在 ] 右邊
+  assert.equal(r.source, 'abcd', '整個 [C] 要一起消失');
+  assert.equal(r.removed, 'chord');
+  // 不可留下殘骸
+  assert.ok(!r.source.includes('['));
+  assert.ok(!r.source.includes(']'));
+});
+
+test('★ Backspace 在開頭不會爆', async () => {
+  const { deleteBefore } = await import('../src/lib/chordedit.js');
+  const r = deleteBefore('abc', 0);
+  assert.equal(r.source, 'abc');
+  assert.equal(r.removed, null);
+});
+
+test('★★ 換行鈕把一行斷成兩行，和弦不跑掉', async () => {
+  const { breakLine } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc [F]def';
+  const pos = src.indexOf(' [F]'); // 在 abc 之後斷開
+  const r = breakLine(src, pos);
+  assert.equal(r.source, '[C]abc\n [F]def');
+  const lines = parseChordPro(r.source).blocks[0].lines;
+  assert.equal(lines.length, 2, '應該變成兩行');
+  const chords = [];
+  for (const l of lines) for (const p of l.pairs) if (p.chord) chords.push(p.chord);
+  assert.deepEqual(chords, ['C', 'F']);
+});
+
+test('★★ 合併下一行', async () => {
+  const { joinNextLine } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc\n[F]def';
+  const r = joinNextLine(src, 0);
+  assert.equal(r.source, '[C]abc[F]def');
+  assert.equal(r.joined, true);
+});
+
+test('★ 最後一行合併不會爆（沒有下一行）', async () => {
+  const { joinNextLine } = await import('../src/lib/chordedit.js');
+  const r = joinNextLine('[C]abc', 0);
+  assert.equal(r.joined, false);
+  assert.equal(r.source, '[C]abc');
+});
+
+test('★★ 行尾插入和弦（模擬行尾＋鈕）', async () => {
+  const { insertChord } = await import('../src/lib/chordedit.js');
+  const src = '[C]abc';   // 想在 abc 之後、行尾加一個和弦
+  const r = insertChord(src, src.length, 'G');
+  assert.equal(r.source, '[C]abc[G]');
+  const pairs = parseChordPro(r.source).blocks[0].lines[0].pairs;
+  const chords = pairs.filter((p) => p.chord).map((p) => p.chord);
+  assert.deepEqual(chords, ['C', 'G']);
+});

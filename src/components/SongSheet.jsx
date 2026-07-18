@@ -4,7 +4,8 @@ import { transposeChordToken, transposeChord, isChord } from '../lib/chords.js';
 import { ChordCard } from './ChordDiagram.jsx';
 import ChordEditor from './ChordEditor.jsx';
 import LyricEditor from './LyricEditor.jsx';
-import { replaceChord, removeChord, moveChord, moveChordTo, insertChord, replaceText, toSourceChord } from '../lib/chordedit.js';
+import LineControls from './LineControls.jsx';
+import { replaceChord, removeChord, moveChord, moveChordTo, insertChord, replaceText, insertText, deleteBefore, breakLine, toSourceChord } from '../lib/chordedit.js';
 import VideoPlayer from './VideoPlayer.jsx';
 import { parseYouTube } from '../lib/youtube.js';
 
@@ -19,8 +20,12 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag
   // 解鎖時即使整行沒和弦也要留出和弦列，否則沒地方按「＋」加第一個和弦
   const showRow = units.some((u) => u.chord) || editable;
 
+  // 這一行在原始碼裡的結尾位置（最後一個單元的文字結尾）
+  const lastUnit = units[units.length - 1];
+  const lineEnd = (lastUnit?.textStart ?? 0) + (lastUnit?.text?.length ?? 0);
+
   return (
-    <div className="sheet-line">
+    <div className="sheet-line group/line">
       {units.map((u, i) => {
         const shown = u.chord ? transposeChordToken(u.chord, semitones, useFlat) : null;
         const editing = editable && sel?.mode === 'edit' && u.chordStart != null && sel.start === u.chordStart;
@@ -121,6 +126,28 @@ function Line({ pairs, semitones, useFlat, editable, sel, onSelect, onEdit, drag
           </span>
         );
       })}
+      {/* 行尾插入和弦：行尾沒有對應單元，所以在這裡獨立渲染輸入框 */}
+      {editable && sel?.mode === 'insert' && sel.pos === lineEnd && (
+        <span className="sheet-unit relative">
+          <ChordEditor
+            value=""
+            canMove={false}
+            onCommit={(v) => onEdit({ type: 'insert', pos: lineEnd, value: v })}
+            onMove={() => {}}
+            onDelete={() => onSelect(null)}
+            onClose={() => onSelect(null)}
+          />
+          <span className="sheet-lyric">{'\u00A0'}</span>
+        </span>
+      )}
+      {editable && !(sel?.mode === 'insert' && sel.pos === lineEnd) && (
+        <LineControls
+          onAddChord={() => onSelect({ mode: 'insert', pos: lineEnd })}
+          onBreak={() => onEdit({ type: 'break', pos: lineEnd })}
+          onSpace={() => onEdit({ type: 'space', pos: lineEnd })}
+          onBackspace={() => onEdit({ type: 'backspace', pos: lineEnd })}
+        />
+      )}
     </div>
   );
 }
@@ -226,6 +253,17 @@ export default function SongSheet({
       case 'lyric':
         r = replaceText(src, op.start, op.end, op.value);
         break;
+      case 'space':
+        onSourceChange?.(insertText(src, op.pos, ' ').source);
+        return;
+      case 'backspace': {
+        const d = deleteBefore(src, op.pos);
+        if (d.removed) onSourceChange?.(d.source);
+        return;
+      }
+      case 'break':
+        onSourceChange?.(breakLine(src, op.pos).source);
+        return;
       case 'move': {
         r = moveChord(src, op.start, op.end, op.dir);
         if (!r.moved) return; // 已到行首/行尾，保持選取讓使用者再試別的方向

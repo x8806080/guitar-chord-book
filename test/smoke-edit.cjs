@@ -285,6 +285,46 @@ const reset = async (src, over = {}) => {
   await act(async () => document.querySelector('article').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
   ok('★ 關閉編輯時要清掉反色', lastHighlight === null, JSON.stringify(lastHighlight));
 
+  // ---- 行尾控制列 ----
+  await reset('[C]Twinkle little');
+  ok('★ 每行都有行尾控制鈕', [...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === '行尾加和弦'));
+
+  // 行尾加和弦
+  await reset('[C]Twinkle');
+  await click([...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '行尾加和弦'));
+  const eol = editorInput();
+  ok('★★ 行尾＋會在行尾開輸入框', Boolean(eol));
+  await type(eol, 'G');
+  await key(eol, 'Enter');
+  ok('★★ 和弦加在歌詞最後', source === '[C]Twinkle[G]', source);
+
+  // 換行
+  await reset('[C]abc [F]def');
+  const nl = source.indexOf(' [F]');
+  // 直接測第一行的換行鈕（第一行結尾在 "abc" 之後）
+  await reset('[C]abc');
+  await click([...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '從這裡換行'));
+  ok('★★ 換行鈕在行尾插入換行', source === '[C]abc\n', JSON.stringify(source));
+
+  // 加空格
+  await reset('[C]abc');
+  await click([...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '加一個空格'));
+  ok('★★ 加空格鈕在行尾補空格', source === '[C]abc ', JSON.stringify(source));
+
+  // 刪字元
+  await reset('[C]abc');
+  await click([...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '刪一個字元'));
+  ok('★★ 刪字元鈕刪掉行尾一個字', source === '[C]ab', source);
+
+  // 刪到碰和弦：整個和弦一起刪
+  await reset('[C]');
+  await click([...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '刪一個字元'));
+  ok('★★ 刪到和弦標記時整個刪掉，不留殘骸', source === '' && !source.includes('['), JSON.stringify(source));
+
+  // 鎖定時完全沒有這些鈕
+  await reset('[C]abc', { editable: false });
+  ok('★ 鎖定時沒有行尾控制鈕', ![...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === '行尾加和弦'));
+
   let pass = 0;
   for (const [c, n, e] of checks) { console.log(`${c ? '✅' : '❌'} ${n}${e ? '  → ' + e : ''}`); if (c) pass++; }
   console.log(`\n${pass}/${checks.length} 通過`);
