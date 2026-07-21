@@ -83,7 +83,13 @@ export default function App() {
       const local = db.listAll();
       const r = await syncNow(cfg, local, custom.getAllCustom());
       const saved = db.replaceAll(r.songs);
-      setSongs(saved);
+      // 同步是非同步的：pull 花的那 1~3 秒裡，使用者可能還在打字。
+      // 直接 setSongs(saved) 會用同步當下的快照蓋掉「這期間新打的字」，
+      // 游標跳走、內容跳回。所以逐首比對 updatedAt，較新的那份（多半是正在編輯的）留住。
+      setSongs((live) => saved.map((s) => {
+        const cur = live.find((x) => x.id === s.id);
+        return cur && (cur.updatedAt || '') > (s.updatedAt || '') ? cur : s;
+      }));
       if (r.custom) { custom.replaceAllCustom(r.custom); setCustomVer((v) => v + 1); }
       const next = { ...cfg, sha: r.sha, lastSync: new Date().toISOString() };
       db.setSyncConfig(next);
@@ -115,8 +121,13 @@ export default function App() {
   /* ---------- 存檔（500ms debounce，避免每個按鍵都寫 localStorage） ---------- */
   const timer = useRef(null);
   const patchActive = useCallback((patch) => {
+    // 關鍵：改畫面的同時就更新 updatedAt。
+    // 若等到 500ms 後才由 saveSong 補上時間戳，這中間若有一次同步 pull 回來，
+    // merge 會覺得「正在編輯的這首」比遠端舊，用舊資料蓋掉你剛打的字 ——
+    // 症狀就是「打到一半跳回舊內容，要重打好幾次」。
+    const stampedPatch = { ...patch, updatedAt: new Date().toISOString() };
     setSongs((prev) => {
-      const next = prev.map((s) => (s.id === activeId ? { ...s, ...patch } : s));
+      const next = prev.map((s) => (s.id === activeId ? { ...s, ...stampedPatch } : s));
       const target = next.find((s) => s.id === activeId);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => { db.saveSong(target); scheduleSync(); }, 500);

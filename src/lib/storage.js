@@ -61,7 +61,10 @@ export function saveSong(song) {
   const songs = listAll();
   const now = new Date().toISOString();
   const i = songs.findIndex((s) => s.id === song.id);
-  const next = { ...song, updatedAt: now, createdAt: song.createdAt || now };
+  // 尊重呼叫端已設好的 updatedAt（編輯當下就蓋了時間戳）；
+  // 沒帶才補 now。若這裡強制用 now，會把「編輯瞬間」延後到「存檔瞬間」，
+  // 與同步 pull 形成競態，導致剛編輯的內容被判定為舊而被覆蓋。
+  const next = { ...song, updatedAt: song.updatedAt || now, createdAt: song.createdAt || now };
   if (i >= 0) songs[i] = next;
   else songs.unshift({ ...next, id: next.id || uid() });
   write(KEY, songs);
