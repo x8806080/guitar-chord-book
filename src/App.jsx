@@ -12,7 +12,7 @@ import { parseChordPro, collectChords } from './lib/chordpro.js';
 import { detectKey, preferFlat } from './lib/chords.js';
 import * as db from './lib/storage.js';
 import * as custom from './lib/customshapes.js';
-import { syncNow } from './lib/sync.js';
+import { syncNow, mergeSongs } from './lib/sync.js';
 import { useAutoScroll, snapSpeed, scrollToTop, SPEED_DEFAULT } from './lib/autoscroll.js';
 import { VERSION, formatVersion } from './lib/version.js';
 import { SAMPLE } from './lib/sample.js';
@@ -73,6 +73,19 @@ export default function App() {
   // 若順序顛倒會在啟動瞬間丟 ReferenceError，整個 App 白/黑畫面。
   const syncing = useRef(false);
 
+  // 編輯有 500ms 存檔 debounce。若同步剛好插在「打完字」與「存進 localStorage」之間，
+  // 重讀本機資料會讀不到剛打的字，畫面就會被舊值蓋回去。
+  // 所以同步前先把待存檔的內容強制寫入 —— 這兩個 ref 讓 flush 不必依賴 patchActive
+  // （patchActive 定義在後面，直接引用會踩到 TDZ）。
+  const timer = useRef(null);
+  const pendingSave = useRef(null);
+  const flushPendingSave = useCallback(() => {
+    if (!pendingSave.current) return;
+    clearTimeout(timer.current);
+    db.saveSong(pendingSave.current);
+    pendingSave.current = null;
+  }, []);
+
   const runSync = useCallback(async (silent = false) => {
     const cfg = db.getSyncConfig();
     if (!db.isSyncReady(cfg)) { setSyncState('off'); return; }
@@ -80,16 +93,20 @@ export default function App() {
     syncing.current = true;
     setSyncState('busy');
     try {
+      flushPendingSave();                  // 把還在 debounce 中的編輯先寫進去
       const local = db.listAll();
       const r = await syncNow(cfg, local, custom.getAllCustom());
-      const saved = db.replaceAll(r.songs);
-      // 同步是非同步的：pull 花的那 1~3 秒裡，使用者可能還在打字。
-      // 直接 setSongs(saved) 會用同步當下的快照蓋掉「這期間新打的字」，
-      // 游標跳走、內容跳回。所以逐首比對 updatedAt，較新的那份（多半是正在編輯的）留住。
-      setSongs((live) => saved.map((s) => {
-        const cur = live.find((x) => x.id === s.id);
-        return cur && (cur.updatedAt || '') > (s.updatedAt || '') ? cur : s;
-      }));
+
+      // 關鍵：syncNow 用的是「同步開始那一刻」的快照，但網路往返要 1~3 秒，
+      // 這期間使用者可能新增歌曲或繼續打字。直接 replaceAll(r.songs) 會把那些
+      // 不在快照裡的東西從 localStorage 抹掉 —— 畫面看起來還在，一重新整理就消失。
+      // 所以寫回前再 flush 一次並重讀最新的本機資料，再合併一次。
+      flushPendingSave();
+      const fresh = db.listAll();
+      const finalSongs = mergeSongs(fresh, r.songs);
+      const saved = db.replaceAll(finalSongs);
+      // 畫面與 localStorage 用同一份結果，兩者不可分歧
+      setSongs(saved);
       if (r.custom) { custom.replaceAllCustom(r.custom); setCustomVer((v) => v + 1); }
       const next = { ...cfg, sha: r.sha, lastSync: new Date().toISOString() };
       db.setSyncConfig(next);
@@ -108,7 +125,7 @@ export default function App() {
     } finally {
       syncing.current = false;
     }
-  }, []);
+  }, [flushPendingSave]);
 
   // 改完東西 8 秒後自動上傳（打字中不會一直打 API）
   const syncTimer = useRef(null);
@@ -119,7 +136,6 @@ export default function App() {
   }, [runSync]);
 
   /* ---------- 存檔（500ms debounce，避免每個按鍵都寫 localStorage） ---------- */
-  const timer = useRef(null);
   const patchActive = useCallback((patch) => {
     // 關鍵：改畫面的同時就更新 updatedAt。
     // 若等到 500ms 後才由 saveSong 補上時間戳，這中間若有一次同步 pull 回來，
@@ -129,8 +145,13 @@ export default function App() {
     setSongs((prev) => {
       const next = prev.map((s) => (s.id === activeId ? { ...s, ...stampedPatch } : s));
       const target = next.find((s) => s.id === activeId);
+      pendingSave.current = target;        // 同步前可據此強制寫入，避免遺失
       clearTimeout(timer.current);
-      timer.current = setTimeout(() => { db.saveSong(target); scheduleSync(); }, 500);
+      timer.current = setTimeout(() => {
+        db.saveSong(target);
+        pendingSave.current = null;
+        scheduleSync();
+      }, 500);
       return next;
     });
   }, [activeId, scheduleSync]);

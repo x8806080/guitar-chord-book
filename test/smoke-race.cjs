@@ -20,6 +20,7 @@ const type = async (el, v) => {
 // 這個 harness 複製 App 的核心資料流：controlled Editor + 一個「同步寫回」函式
 let songs = [{ id: 'a', source: 'orig', updatedAt: '2026-07-18T12:00:00Z' }];
 let patchActive, syncWriteBack;
+let storeRef = songs;   // 模擬 localStorage 的內容
 
 function App() {
   const [list, setList] = useState(songs);
@@ -30,12 +31,19 @@ function App() {
     setList((prev) => prev.map((s) => (s.id === 'a' ? { ...s, ...stamped } : s)));
   };
 
-  // 模擬 runSync 的寫回：帶著同步當下的舊快照回來
-  syncWriteBack = (snapshot) => {
-    setList((live) => snapshot.map((s) => {
-      const cur = live.find((x) => x.id === s.id);
-      return cur && (cur.updatedAt || '') > (s.updatedAt || '') ? cur : s;
-    }));
+  // 模擬修復後的 runSync 寫回：flush 待存 → 重讀最新 → 合併 → 畫面與儲存同一份
+  // （這裡用 storeRef 當作 localStorage 的替身）
+  syncWriteBack = (snapshotResult) => {
+    setList((live) => {
+      const merged = snapshotResult.map((s) => {
+        const cur = live.find((x) => x.id === s.id);
+        return cur && (cur.updatedAt || '') > (s.updatedAt || '') ? cur : s;
+      });
+      // 本機有、但同步結果沒有的（往返期間新增的）必須補回來，否則會遺失
+      for (const cur of live) if (!merged.find((x) => x.id === cur.id)) merged.push(cur);
+      storeRef = merged;   // 儲存層與畫面同一份
+      return merged;
+    });
   };
 
   return React.createElement(Editor, { value: active.source, onChange: (v) => patchActive({ source: v }) });
@@ -61,6 +69,10 @@ const ta = () => document.querySelector('textarea');
   ok('★★ 同步回來後，剛打的字不可跳回舊內容',
      ta().value === '我正在打一長串新歌詞內容',
      `實際變成 "${ta().value}"`);
+
+  ok('★★ 畫面與儲存層必須一致（分歧就會「重新整理才消失」）',
+     storeRef.find((s) => s.id === 'a').source === ta().value,
+     `畫面 "${ta().value}" vs 儲存 "${storeRef.find((s) => s.id === 'a').source}"`);
 
   // 反面：其他裝置的較新版本要能覆蓋
   const newerFromOtherDevice = [{ id: 'a', source: '另一台裝置改的內容', updatedAt: '2030-01-01T00:00:00Z' }];
