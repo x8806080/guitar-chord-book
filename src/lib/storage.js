@@ -43,19 +43,54 @@ const read = (k, fallback) => {
  * localStorage 卻沒寫進去，使用者要等到重新整理才發現資料不見了。
  * 常見失敗原因：無痕模式、瀏覽器封鎖儲存、容量已滿。
  */
+const isQuotaError = (e) =>
+  /quota|exceeded/i.test(String(e?.name) + ' ' + String(e?.message));
+
 const write = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
     return true;
   } catch (e) {
     console.error('儲存失敗', e);
-    const full = /quota|exceeded/i.test(String(e?.name) + String(e?.message));
     throw new StorageError(
-      full
+      isQuotaError(e)
         ? '瀏覽器儲存空間已滿，資料沒有存下來。請先匯出備份再刪掉一些歌譜。'
         : '無法寫入瀏覽器儲存空間，資料不會被保留。可能是無痕模式或瀏覽器設定封鎖了儲存。'
     );
   }
+};
+
+/**
+ * 各項資料的佔用空間（診斷用）。
+ * 容量滿的時候要能立刻看出是誰佔的，而不是叫使用者亂刪。
+ */
+export function storageUsage() {
+  const items = [];
+  let total = 0;
+  try {
+    for (const k of Object.keys(localStorage)) {
+      const bytes = new Blob([localStorage.getItem(k) ?? '']).size;
+      total += bytes;
+      items.push({ key: k, bytes });
+    }
+  } catch { /* 讀不到就回空的，不要因為診斷而炸掉 */ }
+
+  const songs = listAll();
+  const live = songs.filter((s) => !s.deletedAt);
+  const tombstones = songs.filter((s) => s.deletedAt);
+  const sizeOf = (s) => new Blob([JSON.stringify(s)]).size;
+
+  return {
+    totalBytes: total,
+    items: items.sort((a, b) => b.bytes - a.bytes),
+    songCount: live.length,
+    tombstoneCount: tombstones.length,
+    tombstoneBytes: tombstones.reduce((n, s) => n + sizeOf(s), 0),
+    largestSongs: live
+      .map((s) => ({ id: s.id, title: s.title, bytes: sizeOf(s) }))
+      .sort((a, b) => b.bytes - a.bytes)
+      .slice(0, 5),
+  };
 };
 
 /**
@@ -93,6 +128,16 @@ export function gcTombstones(songs) {
   return songs.filter((s) => !(s.deletedAt && s.deletedAt < cutoff));
 }
 
+/**
+ * 立刻清掉所有墓碑（容量吃緊時用）。
+ * 代價：這些刪除紀錄消失後，若其他裝置上還留著那些歌，下次同步可能被拉回來。
+ */
+export function purgeTombstones() {
+  const kept = listAll().filter((s) => !s.deletedAt);
+  write(KEY, kept);
+  return kept;
+}
+
 export function saveSong(song) {
   const songs = listAll();
   const now = new Date().toISOString();
@@ -103,7 +148,18 @@ export function saveSong(song) {
   const next = { ...song, updatedAt: song.updatedAt || now, createdAt: song.createdAt || now };
   if (i >= 0) songs[i] = next;
   else songs.unshift({ ...next, id: next.id || uid() });
-  write(KEY, songs);
+
+  try {
+    write(KEY, songs);
+  } catch (e) {
+    if (!(e instanceof StorageError)) throw e;
+    // 容量滿時，已刪除的墓碑往往還佔著空間。先清掉全部墓碑再試一次，
+    // 能救回來就不要打擾使用者。（墓碑清掉的代價：那些刪除可能在其他裝置復活）
+    const purged = songs.filter((s) => !s.deletedAt);
+    if (purged.length === songs.length) throw e;   // 沒墓碑可清，救不了
+    write(KEY, purged);                            // 再失敗就讓它往上拋
+    return purged;
+  }
   return songs;
 }
 

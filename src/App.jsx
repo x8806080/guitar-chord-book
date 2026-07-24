@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Sun, PanelLeft, PenLine, Music4, Cloud, CloudOff, RefreshCw, CloudAlert, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Moon, Sun, PanelLeft, PenLine, Music4, Cloud, CloudOff, RefreshCw, CloudAlert, PanelLeftClose, PanelLeftOpen, HardDrive } from 'lucide-react';
 
 import Editor from './components/Editor.jsx';
 import SongSheet from './components/SongSheet.jsx';
@@ -7,6 +7,7 @@ import SongList from './components/SongList.jsx';
 import TransposeBar from './components/TransposeBar.jsx';
 import SyncSettings from './components/SyncSettings.jsx';
 import ScrollControl from './components/ScrollControl.jsx';
+import StoragePanel from './components/StoragePanel.jsx';
 
 import { parseChordPro, collectChords } from './lib/chordpro.js';
 import { detectKey, preferFlat } from './lib/chords.js';
@@ -35,6 +36,7 @@ export default function App() {
 
   const [syncCfg, setSyncCfg] = useState(db.getSyncConfig);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [highlight, setHighlight] = useState(null); // 樂譜上選到的和弦/歌詞，對應原始碼的範圍
   const [customVer, setCustomVer] = useState(0);     // 自訂指型改一次就 +1，觸發和弦圖重算
 
@@ -170,6 +172,7 @@ export default function App() {
           scheduleSync();
         } catch (e) {
           notify(e?.message || '存檔失敗，這次的修改可能不會保留');
+          if (/空間|滿/.test(e?.message || '')) setStorageOpen(true);
           console.error(e);
         }
       }, 500);
@@ -240,6 +243,7 @@ export default function App() {
     } catch (e) {
       // 儲存失敗時絕不能讓歌只出現在畫面上 —— 那會變成「重新整理才發現不見了」
       notify(e?.message || '新增失敗，資料沒有存下來');
+      if (/空間|滿/.test(e?.message || '')) setStorageOpen(true);  // 直接帶去清理
       console.error(e);
     }
   };
@@ -329,6 +333,14 @@ export default function App() {
               onToggleEditable={() => setPrefs({ sheetEditable: prefs.sheetEditable !== true })}
             />
           )}
+          <button
+            className={iconBtn}
+            onClick={() => setStorageOpen(true)}
+            title="儲存空間"
+            aria-label="儲存空間"
+          >
+            <HardDrive size={16} />
+          </button>
           <button
             className={iconBtn}
             onClick={() => (syncState === 'off' ? setSyncOpen(true) : runSync(false))}
@@ -472,6 +484,14 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      {storageOpen && (
+        <StoragePanel
+          onClose={() => setStorageOpen(false)}
+          onPurged={() => { setSongs(db.listAll()); notify('已清掉刪除記錄，空間釋放了'); }}
+          onExport={db.exportJSON}
+        />
+      )}
 
       {syncOpen && (
         <SyncSettings

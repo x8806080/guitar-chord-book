@@ -66,3 +66,60 @@ test('★ 正常環境存檔仍然正常', async () => {
   db.saveSong(s);
   assert.equal(db.listAll().find((x) => x.id === s.id)?.source, 'abc');
 });
+
+test('★★ 容量滿時先清墓碑再重試，能救就不要打擾使用者', async () => {
+  let full = true;
+  const store = {};
+  globalThis.localStorage = {
+    getItem: (k) => store[k] ?? null,
+    setItem: (k, v) => {
+      // 模擬：資料超過某個長度就滿；清掉墓碑變短之後就寫得進去
+      if (full && v.length > 400) { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; }
+      store[k] = v;
+    },
+    removeItem: (k) => { delete store[k]; },
+  };
+  const db = await import('../src/lib/storage.js?purge1');
+
+  // 先塞一批墓碑（直接寫，繞過長度限制）
+  full = false;
+  const tombs = Array.from({ length: 6 }, (_, i) => ({
+    id: 't' + i, title: '已刪除的歌' + i, source: '',
+    deletedAt: '2026-07-18T00:00:00Z', updatedAt: '2026-07-18T00:00:00Z',
+  }));
+  store['gcb.songs.v1'] = JSON.stringify(tombs);
+  full = true;
+
+  const s = db.createSong({ title: '新歌', source: 'abc' });
+  const result = db.saveSong(s);   // 第一次會 quota，清墓碑後應成功
+  assert.ok(result.find((x) => x.id === s.id), '清完墓碑後新歌要存得進去');
+  assert.equal(result.filter((x) => x.deletedAt).length, 0, '墓碑應已清掉');
+});
+
+test('★★ 沒有墓碑可清時，容量錯誤要如實拋出（不可假裝成功）', async () => {
+  const store = {};
+  globalThis.localStorage = {
+    getItem: (k) => store[k] ?? null,
+    setItem: () => { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; },
+    removeItem: (k) => { delete store[k]; },
+  };
+  const db = await import('../src/lib/storage.js?purge2');
+  assert.throws(() => db.saveSong(db.createSong({ title: 'x', source: 'y' })), (e) => e.name === 'StorageError');
+});
+
+test('★ storageUsage 能算出用量與最大的歌', async () => {
+  const store = {};
+  globalThis.localStorage = {
+    getItem: (k) => store[k] ?? null,
+    setItem: (k, v) => { store[k] = v; },
+    removeItem: (k) => { delete store[k]; },
+    // Object.keys(localStorage) 需要可列舉的屬性，這裡直接掛上去
+  };
+  const db = await import('../src/lib/storage.js?usage1');
+  db.saveSong(db.createSong({ title: '小歌', source: 'a' }));
+  db.saveSong(db.createSong({ title: '大歌', source: 'x'.repeat(5000) }));
+  const u = db.storageUsage();
+  assert.equal(u.songCount, 2);
+  assert.equal(u.largestSongs[0].title, '大歌', '最大的要排第一');
+  assert.ok(u.largestSongs[0].bytes > 4000);
+});
