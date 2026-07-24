@@ -21,8 +21,14 @@ export default function App() {
   const [songs, setSongs] = useState(() => {
     const list = db.listAll();
     if (list.length) return list;
-    // 首次造訪塞一首範例，讓人立刻看到東西
-    return db.saveSong(db.createSong({ title: 'Twinkle Twinkle Little Star', artist: '傳統民謠', source: SAMPLE }));
+    // 首次造訪塞一首範例，讓人立刻看到東西。
+    // 儲存不可用時（無痕模式等）不能讓這裡拋錯 —— 那會讓整個 App 白畫面。
+    const sample = db.createSong({ title: 'Twinkle Twinkle Little Star', artist: '傳統民謠', source: SAMPLE });
+    try {
+      return db.saveSong(sample);
+    } catch {
+      return [sample];   // 存不進去至少畫面能用，稍後會跳警告告知
+    }
   });
   const visible = useMemo(() => songs.filter((s) => !s.deletedAt), [songs]);
   const [activeId, setActiveId] = useState(() => visible[0]?.id ?? null);
@@ -60,12 +66,22 @@ export default function App() {
   /* ---------- 主題 ---------- */
   useEffect(() => {
     document.documentElement.classList.toggle('dark', prefs.theme === 'dark');
-    db.setPrefs(prefs);
+    // 偏好設定存不進去只是「下次要重設」，不該讓整個 App 掛掉
+    try { db.setPrefs(prefs); } catch (e) { console.error(e); }
   }, [prefs]);
   const setPrefs = (patch) => setPrefsState((p) => ({ ...p, ...patch }));
 
   /* ---------- 動作 ---------- */
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2800); };
+
+  // 啟動就確認 localStorage 真的可寫可讀。
+  // 無痕模式、瀏覽器隱私設定、儲存空間不足都可能讓寫入無聲失敗 ——
+  // 症狀是「新增/編輯看起來成功，一重新整理全部消失」。這種要及早講，不能讓人白做工。
+  useEffect(() => {
+    if (!db.checkStorageWorks()) {
+      notify('⚠ 這個瀏覽器無法儲存資料（可能是無痕模式或隱私設定），新增的歌譜重新整理後會消失');
+    }
+  }, []);
 
   /* ---------- GitHub 同步 ---------- */
   // 注意：runSync / scheduleSync 必須定義在 patchActive「之前」。
@@ -148,9 +164,14 @@ export default function App() {
       pendingSave.current = target;        // 同步前可據此強制寫入，避免遺失
       clearTimeout(timer.current);
       timer.current = setTimeout(() => {
-        db.saveSong(target);
-        pendingSave.current = null;
-        scheduleSync();
+        try {
+          db.saveSong(target);
+          pendingSave.current = null;
+          scheduleSync();
+        } catch (e) {
+          notify(e?.message || '存檔失敗，這次的修改可能不會保留');
+          console.error(e);
+        }
       }, 500);
       return next;
     });
@@ -211,10 +232,16 @@ export default function App() {
 
   const handleCreate = () => {
     const s = db.createSong({ source: '{title: 未命名歌曲}\n{artist: }\n\n[C]在這裡開始寫\n' });
-    setSongs(db.saveSong(s));
-    setActiveId(s.id);
-    setMobileView('edit');
-    scheduleSync();
+    try {
+      setSongs(db.saveSong(s));
+      setActiveId(s.id);
+      setMobileView('edit');
+      scheduleSync();
+    } catch (e) {
+      // 儲存失敗時絕不能讓歌只出現在畫面上 —— 那會變成「重新整理才發現不見了」
+      notify(e?.message || '新增失敗，資料沒有存下來');
+      console.error(e);
+    }
   };
 
   const handleDelete = (id) => {

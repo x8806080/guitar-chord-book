@@ -21,6 +21,14 @@ const TOMBSTONE_DAYS = 30;
 const uid = () =>
   crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
+/** 儲存失敗時丟這個，讓呼叫端能明確告知使用者 */
+export class StorageError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'StorageError';
+  }
+}
+
 const read = (k, fallback) => {
   try {
     const raw = localStorage.getItem(k);
@@ -29,15 +37,43 @@ const read = (k, fallback) => {
     return fallback;
   }
 };
+
+/**
+ * 寫入。失敗時**必須拋錯**，不可以只印 console —— 否則畫面上東西還在、
+ * localStorage 卻沒寫進去，使用者要等到重新整理才發現資料不見了。
+ * 常見失敗原因：無痕模式、瀏覽器封鎖儲存、容量已滿。
+ */
 const write = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
     return true;
   } catch (e) {
-    console.error('儲存失敗（可能已超出瀏覽器容量）', e);
-    return false;
+    console.error('儲存失敗', e);
+    const full = /quota|exceeded/i.test(String(e?.name) + String(e?.message));
+    throw new StorageError(
+      full
+        ? '瀏覽器儲存空間已滿，資料沒有存下來。請先匯出備份再刪掉一些歌譜。'
+        : '無法寫入瀏覽器儲存空間，資料不會被保留。可能是無痕模式或瀏覽器設定封鎖了儲存。'
+    );
   }
 };
+
+/**
+ * 啟動檢查：確認 localStorage 真的可寫可讀。
+ * 有些環境（無痕模式、隱私設定、iOS 低儲存空間）localStorage 存在但寫入無效，
+ * 那會造成「新增的東西重新整理就消失」這種最難查的問題 —— 要及早明講。
+ */
+export function checkStorageWorks() {
+  const probe = '__gcb_probe__';
+  try {
+    localStorage.setItem(probe, '1');
+    const ok = localStorage.getItem(probe) === '1';
+    localStorage.removeItem(probe);
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 /** 含墓碑的完整清單（給同步用） */
 export const listAll = () => read(KEY, []);
