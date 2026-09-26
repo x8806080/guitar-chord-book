@@ -102,6 +102,22 @@ const render = async () => act(async () => {
   await setVal(document.querySelector('input[aria-label="起始品位"]'), 99);
   ok('★ 起始品有上限保護', Number(document.querySelector('input[aria-label="起始品位"]').value) <= 17);
 
+  // ★★ 查無指型的和弦（少見寫法），點編輯鈕不可白畫面
+  // （FretboardEditor 收到 undefined initialFrets 時曾會 crash）
+  await act(async () => {
+    root.render(React.createElement(ChordCard, {
+      name: 'Xyz7no', editable: true, customVersion: ver, onCustomChange: () => {},
+    }));
+  });
+  const pencilNoShape = byLabel('編輯 Xyz7no 指型');
+  ok('★ 查無指型的和弦仍有編輯鈕', Boolean(pencilNoShape));
+  let crashed = false;
+  try {
+    await act(async () => pencilNoShape.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+  } catch (e) { crashed = true; }
+  ok('★★ 點開查無指型的和弦編輯器不可 crash（可從空白指板開始補）', !crashed);
+  ok('★★ 開出的是空白指板編輯器', Boolean(document.querySelector('[role="dialog"], svg')));
+
   let pass = 0;
   for (const [c, n, e] of checks) { console.log(`${c ? '✅' : '❌'} ${n}${e ? '  → ' + e : ''}`); if (c) pass++; }
   console.log(`\n${pass}/${checks.length} 通過`);

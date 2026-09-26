@@ -38,12 +38,77 @@ export function pitchToNote(pitch, useFlat = false) {
 }
 
 /**
+ * 正規化和弦寫法：把括號式的加註延伸音轉成標準 quality。
+ *
+ * 各家譜（尤其 e-chords 這類）常用括號標延伸音，音樂上等同標準寫法：
+ *   Em7(9)   = Em9      （7 和弦再加 9 度 = 9 和弦）
+ *   A5(7/9)  = A9       （5 力量和弦再補 7、9 度，實際就是屬九和弦）
+ *   C(add9)  = Cadd9
+ *   G7(b9)   = G7b9     （括號內的升降記號原樣保留）
+ *   D(9)     = Dadd9    （三和弦直接加 9，慣例是 add9）
+ *
+ * 規則：抽出所有括號內容攤平，去掉分隔用的 '/'，再依有沒有 7 度決定併法。
+ * 這是「輸入清理」層 —— 只轉寫法，不改和弦的實際音。
+ */
+export function normalizeChordName(raw) {
+  if (typeof raw !== 'string') return raw;
+  let s = raw.trim();
+  if (!s) return s;
+
+  // slash bass（例如 C/G）要先保護起來，別跟括號內的 '/' 搞混
+  let bass = '';
+  const bassM = /\/([A-G](?:#{1,2}|b{1,2})?)\s*$/.exec(s);
+  if (bassM) { bass = bassM[0]; s = s.slice(0, bassM.index); }
+
+  if (!s.includes('(')) return s + bass;
+
+  // 把所有括號內容收集起來，本體去掉括號
+  const inside = [];
+  const base = s.replace(/\(([^)]*)\)/g, (_, g) => { inside.push(g); return ''; });
+  // 括號內容攤平：'7/9' → ['7','9']，去掉純分隔符
+  const parts = inside.join('/').split('/').map((x) => x.trim()).filter(Boolean);
+  if (!parts.length) return base + bass;
+
+  const has = (t) => new RegExp(`(^|[^0-9])${t}([^0-9]|$)`).test(base) || parts.includes(t);
+  const ext = parts.join('');
+
+  // add9 特例：本體沒有七度、括號只是加個 9，慣例寫 add9
+  if (parts.length === 1 && /^9$/.test(parts[0]) && !/7|9|11|13/.test(base)) {
+    // A5(9) 這種也當 add9 處理；A5→A 讓它變 Aadd9 而非 A5add9
+    return base.replace(/5$/, '') + 'add9' + bass;
+  }
+
+  // 力量和弦 A5(7/9)：5 只是省略三度，補上 7、9 後就是屬和弦，去掉 '5'
+  let out = base.replace(/5$/, '');
+
+  // 屬和弦的延伸音是階梯式的：13 隱含 11、9、7；11 隱含 9、7；9 隱含 7。
+  // 所以 Em7(9) 不是「Em7 加 9」寫成 Em79，而是合併成最高階梯：Em9。
+  // 要把 base 尾端「已經有的延伸數字」(Em7 的 7) 也一起納入計算，
+  // 否則只看括號會漏掉它。變化音 (b9 #11 ...) 保留成後綴，不併入階梯。
+  const ladder = [7, 9, 11, 13];
+  let baseNum = null;
+  const tailM = /(7|9|11|13)$/.exec(out);
+  if (tailM) { baseNum = Number(tailM[1]); out = out.slice(0, tailM.index); } // 先把尾端數字拆下來
+
+  const numeric = parts.filter((p) => /^\d+$/.test(p)).map(Number);
+  const altered = parts.filter((p) => !/^\d+$/.test(p));
+  const stacked = [...(baseNum !== null ? [baseNum] : []), ...numeric].filter((n) => ladder.includes(n));
+  const nonLadder = numeric.filter((n) => !ladder.includes(n));
+
+  if (stacked.length) out += String(Math.max(...stacked)); // 7,9 → 9；9,13 → 13
+  else if (baseNum !== null) out += String(baseNum);        // 沒有階梯延伸就還原尾端數字
+  if (nonLadder.length) out += nonLadder.join('');          // 6 之類非階梯音
+  out += altered.join('');                                  // 補上變化音
+  return out + bass;
+}
+
+/**
  * 解析單一和弦字串
  * @returns {{root:string, quality:string, bass:string|null}|null}
  */
 export function parseChord(raw) {
   if (typeof raw !== 'string') return null;
-  const s = raw.trim();
+  const s = normalizeChordName(raw.trim());
   if (!s || NON_CHORD.has(s)) return null;
   const m = CHORD_RE.exec(s);
   if (!m) return null;
@@ -61,11 +126,29 @@ export const isChord = (raw) => parseChord(raw) !== null;
  * @returns {string} 轉調後和弦；無法解析時原樣回傳（保留 N.C.、| 等記號）
  */
 export function transposeChord(raw, semitones, useFlat = false) {
-  const c = parseChord(raw);
-  if (!c) return raw;
-  const root = pitchToNote(noteToPitch(c.root) + semitones, useFlat);
-  const bass = c.bass ? '/' + pitchToNote(noteToPitch(c.bass) + semitones, useFlat) : '';
-  return root + c.quality + bass;
+  if (typeof raw !== 'string') return raw;
+  const s = raw.trim();
+  // 先確認這是合法和弦（parseChord 會正規化括號寫法來判斷），不合法就原樣回傳
+  if (!parseChord(s)) return raw;
+
+  // 只把根音與 slash bass 換成新音，quality 保持「使用者原本打的樣子」——
+  // 包含 (9)、(7/9) 這類括號寫法。這樣轉調後畫面仍與原譜一致，
+  // 而算指型時由 parseChord/generateShapes 自己去正規化，兩者互不干擾。
+  const ROOT = /^([A-G](?:#{1,2}|b{1,2})?)/;
+  const rootM = ROOT.exec(s);
+  if (!rootM) return raw;
+  const newRoot = pitchToNote(noteToPitch(rootM[1]) + semitones, useFlat);
+
+  // slash bass 在最後面，且其後不接括號（避免動到括號內的 '/'）
+  const bassM = /\/([A-G](?:#{1,2}|b{1,2})?)(\s*)$/.exec(s);
+  let body = s;
+  let bassOut = '';
+  if (bassM) {
+    body = s.slice(0, bassM.index);
+    bassOut = '/' + pitchToNote(noteToPitch(bassM[1]) + semitones, useFlat) + bassM[2];
+  }
+  const quality = body.slice(rootM[1].length); // 原始 quality，原樣保留
+  return newRoot + quality + bassOut;
 }
 
 /** 一格 [] 內可能有多個和弦（如 "C G"），逐一轉調後組回 */

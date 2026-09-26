@@ -35,7 +35,8 @@ export default function FretboardEditor({ chordName, initialFrets, onSave, onDel
     const pressed = (initialFrets || []).filter((f) => f > 0);
     if (!pressed.length) return 1;
     const min = Math.min(...pressed);
-    return min > 1 && !initialFrets.includes(0) ? min : 1;
+    // initialFrets 可能是 undefined（查無指型的和弦），要先防呆再 .includes
+    return min > 1 && !(initialFrets || []).includes(0) ? min : 1;
   });
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { transposeChord, parseChord, detectKey } from '../src/lib/chords.js';
+import { transposeChord, parseChord, detectKey, normalizeChordName } from '../src/lib/chords.js';
 import { parseChordPro, parseChordLine, collectChords, pairsToUnits } from '../src/lib/chordpro.js';
 
 test('基本三和弦升降', () => {
@@ -98,4 +98,35 @@ test('拉丁單字不會被拆開', () => {
 test('中英混排', () => {
   const units = pairsToUnits(parseChordLine('[C]我 love 你'));
   assert.deepEqual(units.map((u) => u.text), ['我', ' ', 'love', ' ', '你']);
+});
+
+test('★★ 括號延伸音正規化（e-chords 等外部譜常見寫法）', () => {
+  const cases = [
+    ['Em7(9)', 'Em9'], ['A5(7/9)', 'A9'], ['C(add9)', 'Cadd9'],
+    ['G7(b9)', 'G7b9'], ['D(9)', 'Dadd9'], ['A5(9)', 'Aadd9'],
+    ['G7(9/13)', 'G13'], ['A7(b9)', 'A7b9'], ['Cmaj7(9)', 'Cmaj9'],
+    ['Dm7(11)', 'Dm11'],
+    // 不含括號的一般和弦不可被動到
+    ['Cmaj7', 'Cmaj7'], ['Am/G', 'Am/G'], ['A7', 'A7'], ['C/G', 'C/G'], ['Em', 'Em'],
+  ];
+  for (const [inp, exp] of cases) {
+    assert.equal(normalizeChordName(inp), exp, `${inp} 應正規化為 ${exp}`);
+  }
+});
+
+test('★★ 括號寫法要能解析出根音與 quality', () => {
+  assert.deepEqual(parseChord('Em7(9)'), { root: 'E', quality: 'm9', bass: null });
+  assert.deepEqual(parseChord('A5(7/9)'), { root: 'A', quality: '9', bass: null });
+  assert.deepEqual(parseChord('G7(b9)'), { root: 'G', quality: '7b9', bass: null });
+  // 原本完全解析失敗的 A5(7/9) 現在必須成功
+  assert.ok(parseChord('A5(7/9)'), 'A5(7/9) 不可再回 null');
+});
+
+test('★★ 括號和弦轉調要保留使用者原本的寫法（跟原譜對得上）', () => {
+  assert.equal(transposeChord('Em7(9)', 2), 'F#m7(9)');
+  assert.equal(transposeChord('A5(7/9)', 2), 'B5(7/9)');
+  assert.equal(transposeChord('Em7(9)', 0), 'Em7(9)', '不轉調時原樣');
+  // 一般和弦轉調不受影響
+  assert.equal(transposeChord('Cmaj7', 2), 'Dmaj7');
+  assert.equal(transposeChord('Am/G', 2), 'Bm/A');
 });
