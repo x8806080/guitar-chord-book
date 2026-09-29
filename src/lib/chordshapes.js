@@ -262,6 +262,32 @@ const CACHE = new Map();
  * @returns {Array<{frets, baseFret, barre, fingers, span, source, score}>}
  *          source: 'open'（標準開放指型）| 'caged'（移動型）| 'algo'（演算法）
  */
+/**
+ * 把使用者存的自訂指型轉成可顯示的 shape 物件。
+ *
+ * 關鍵：一律採用使用者存的 frets / baseFret / barre，**不過 analyzeShape 的合法性關卡**。
+ * 自訂的整個意義就是「存一個引擎算不出來、或不認可的按法」——
+ * 只壓兩條弦、跨度很大、非典型橫按都該存得住。
+ * 若還要通過 analyzeShape（它會對音太少、跨度大的指型回 null），
+ * 使用者存的指型就會被悄悄丟掉，畫面顯示不出來（就是「存了看不到」的成因）。
+ * fingers / span 只是輔助數字，簡單估算即可，不影響畫圖。
+ */
+function customToShape(custom) {
+  const frets = custom.frets;
+  const pressed = frets.filter((f) => f > 0);
+  const minFret = pressed.length ? Math.min(...pressed) : 1;
+  const maxFret = pressed.length ? Math.max(...pressed) : 1;
+  return {
+    frets,
+    baseFret: custom.baseFret ?? (frets.some((f) => f === 0) || minFret <= 1 ? 1 : minFret),
+    barre: custom.barre ?? null,
+    fingers: pressed.length,
+    span: pressed.length ? maxFret - minFret + 1 : 1,
+    source: 'custom',
+    score: -1000,
+  };
+}
+
 export function generateShapes(chordStr, opts = {}) {
   const { tuning = STANDARD_TUNING, maxResults = 4, includeCustom = true } = opts;
   // 有自訂指型時不吃快取 —— 自訂會即時改，快取會讓畫面停在舊版
@@ -270,20 +296,21 @@ export function generateShapes(chordStr, opts = {}) {
   if (!custom && CACHE.has(cacheKey)) return CACHE.get(cacheKey);
   const c = parseChord(chordStr);
   if (!c) {
-    if (custom) { const a = analyzeShape(custom.frets); if (a) return [{ ...a, source: 'custom', score: -1000 }]; }
+    // 和弦名無法解析，但有自訂指型時仍要顯示它（例如少見寫法）
+    if (custom) return [customToShape(custom)];
     CACHE.set(cacheKey, []); return [];
   }
 
   const rootPitch = noteToPitch(c.root);
-  if (rootPitch === null) { if (!custom) CACHE.set(cacheKey, []); return []; }
+  if (rootPitch === null) {
+    if (custom) return [customToShape(custom)];
+    CACHE.set(cacheKey, []); return [];
+  }
 
   const out = [];
 
-  // 0. 自訂指型永遠排第一（分數壓到最低）
-  if (custom) {
-    const a = analyzeShape(custom.frets);
-    if (a) out.push({ ...a, source: 'custom', score: -1000 });
-  }
+  // 0. 自訂指型永遠排第一（分數壓到最低），直接採用存的值、不過合法性檢查
+  if (custom) out.push(customToShape(custom));
 
   // 1. 開放和弦表
   const key = rootPitch + '|' + c.quality + '|' + (c.bass ? noteToPitch(c.bass) : '');

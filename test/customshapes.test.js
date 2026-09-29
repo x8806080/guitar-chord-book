@@ -77,3 +77,28 @@ test('不認得的和弦回 null key', () => {
   assert.equal(C.chordKey(''), null);
   assert.equal(C.saveCustomShape('亂寫', {}), false);
 });
+
+test('★★ 自訂指型不可被 analyzeShape 的合法性檢查擋掉（存了看不到的根因）', () => {
+  reset();
+  // 這些指型 analyzeShape 會回 null（音太少、跨度大），但使用者存了就該看得到
+  const cases = [
+    ['C', [-1, -1, -1, -1, 2, 3]],   // 只壓 2 條弦
+    ['D', [-1, -1, -1, -1, -1, 3]],  // 只壓 1 條弦
+    ['E', [1, -1, -1, -1, -1, 7]],   // 跨度 7 品
+  ];
+  for (const [name, frets] of cases) {
+    C.saveCustomShape(name, { frets, baseFret: 1, barre: null });
+    const s = generateShapes(name, { maxResults: 1 })[0];
+    assert.equal(s?.source, 'custom', `${name} 自訂指型必須顯示得出來`);
+    assert.deepEqual(s.frets, frets, `${name} 必須用存的 frets`);
+  }
+});
+
+test('★★ 自訂指型要保留使用者存的 baseFret 與 barre，不可被重算', () => {
+  reset();
+  // 高把位橫按：使用者在編輯器設 baseFret=5、特定 barre
+  C.saveCustomShape('Bm', { frets: [5, 7, 7, 5, 5, 5], baseFret: 5, barre: { fret: 5, from: 0, to: 5 } });
+  const s = generateShapes('Bm', { maxResults: 1 })[0];
+  assert.equal(s.baseFret, 5, 'baseFret 必須用存的，不可被 analyzeShape 重算');
+  assert.deepEqual(s.barre, { fret: 5, from: 0, to: 5 }, 'barre 必須用存的');
+});
