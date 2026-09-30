@@ -86,6 +86,22 @@ export function ChordDiagram({ shape, size = 1, className = '' }) {
         />
       ))}
 
+      {/* 指板定位點：對照真實吉他的 3/5/7/9/12 格 inlay，高把位時快速判斷位置。
+          畫在兩弦間隙、很淡，z-order 在按弦點之前，被按到的格子由實心點蓋過不影響判讀。 */}
+      {Array.from({ length: ROWS }, (_, row) => {
+        const fret = baseFret + row;                 // 這一格對應的絕對品位
+        if (![3, 5, 7, 9, 12, 15, 17, 19, 21, 24].includes(fret)) return null;
+        const cy = PAD_T + (row + 0.5) * FH;
+        const mid = PAD_L + BOARD_W / 2;
+        const dot = (cx, key) => (
+          <circle key={key} cx={cx} cy={cy} r={2} fill="var(--muted)" opacity={0.28} />
+        );
+        // 12、24 格是雙點（跨兩弦間隙），其餘單點置中
+        return fret % 12 === 0
+          ? [dot(mid - SW, `i${row}a`), dot(mid + SW, `i${row}b`)]
+          : dot(mid, `i${row}`);
+      })}
+
       {/* 起始把位標記 */}
       {!isOpenPos && (
         <text
