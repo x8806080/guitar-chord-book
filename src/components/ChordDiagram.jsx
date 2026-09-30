@@ -21,17 +21,34 @@ const FH = 13;   // 品格高
 const PAD_T = 16; // 上緣（放 x/o）
 const PAD_L = 8;
 const PAD_R = 14; // 右緣（放 "5fr"）
-const ROWS = 4;   // 顯示幾個品格
+const MIN_ROWS = 4;  // 至少畫幾格（少於這個會太扁）
+const MAX_ROWS = 7;  // 上限，避免異常指型把圖拉到很長
 
 const BOARD_W = SW * 5;
-const BOARD_H = FH * ROWS;
 const VB_W = PAD_L + BOARD_W + PAD_R;
-const VB_H = PAD_T + BOARD_H + 4;
+
+/**
+ * 這張圖需要畫幾格。
+ * 固定 4 格時，「開放弦 + 高把位按弦」的指型（低弦開放、高弦按 5~7 品）
+ * 會因為 baseFret 被鎖在 1、按弦點卻在第 7 品，而畫到格子外面。
+ * 有開放弦時無法移把位（開放弦定義在第 1 品區，移走就錯了），
+ * 唯一正解是把格子加長到容得下最高的按弦點。
+ */
+function rowsFor(frets, baseFret) {
+  const pressed = frets.filter((f) => f > 0);
+  if (!pressed.length) return MIN_ROWS;
+  const need = Math.max(...pressed) - baseFret + 1;   // 最高按弦點落在第幾格
+  return Math.min(MAX_ROWS, Math.max(MIN_ROWS, need));
+}
 
 export function ChordDiagram({ shape, size = 1, className = '' }) {
   if (!shape) return null;
   const { frets, baseFret, barre } = shape;
   const isOpenPos = baseFret === 1;
+
+  const ROWS = rowsFor(frets, baseFret);
+  const BOARD_H = FH * ROWS;
+  const VB_H = PAD_T + BOARD_H + 4;
 
   const x = (str) => PAD_L + str * SW;             // str: 0=第6弦 … 5=第1弦
   const y = (fret) => PAD_T + (fret - baseFret + 0.5) * FH; // 點的中心

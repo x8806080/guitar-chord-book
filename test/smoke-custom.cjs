@@ -118,6 +118,28 @@ const render = async () => act(async () => {
   ok('★★ 點開查無指型的和弦編輯器不可 crash（可從空白指板開始補）', !crashed);
   ok('★★ 開出的是空白指板編輯器', Boolean(document.querySelector('[role="dialog"], svg')));
 
+  // ★★ 開放弦 + 高把位的指型，按弦點不可畫到格子外（viewBox 要跟著加長）
+  // 有開放弦時 baseFret 鎖在 1，高弦卻按第 7 品 —— 固定 4 格會溢出。
+  Object.keys(dom.window.localStorage).forEach((k) => dom.window.localStorage.removeItem(k));
+  ver++;
+  custom.saveCustomShape('C', { frets: [0, -1, -1, 7, 7, 7], baseFret: 1, barre: null });
+  await act(async () => {
+    root.render(React.createElement(ChordCard, {
+      name: 'C', editable: false, customVersion: ver, onCustomChange: () => {},
+    }));
+  });
+  const svg = document.querySelector('svg');
+  const vb = svg?.getAttribute('viewBox')?.split(/\s+/).map(Number); // [minX minY W H]
+  const vbH = vb ? vb[3] : 0;
+  const dots = [...document.querySelectorAll('svg circle')]
+    .map((c) => parseFloat(c.getAttribute('cy')))
+    .filter((v) => Number.isFinite(v));
+  const maxCy = dots.length ? Math.max(...dots) : 0;
+  ok('★★ 開放弦+高把位：viewBox 有加長容納第 7 品',
+     vbH > 90, `viewBox 高 ${vbH}`);
+  ok('★★ 開放弦+高把位：最低按弦點不超出圖框（不再溢出格子）',
+     maxCy <= vbH, `最低點 cy=${maxCy} / 圖框高 ${vbH}`);
+
   let pass = 0;
   for (const [c, n, e] of checks) { console.log(`${c ? '✅' : '❌'} ${n}${e ? '  → ' + e : ''}`); if (c) pass++; }
   console.log(`\n${pass}/${checks.length} 通過`);
